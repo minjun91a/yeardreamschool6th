@@ -1,0 +1,12 @@
+# Render Blueprint — 학습올인원 서버 (무료 티어)
+# 사용: Render 대시보드 → New → Blueprint → 이 레포 선택 → Apply
+#   (블루프린트가 안 되면 배포_실행안내.md 의 '수동' 방법으로 같은 값 입력)
+services:
+  - name: hakseup-allinone           # 배포 주소: https://hakseup-allinone.onrender.com (원하는 이름으로 변경 가능)
+    type: web
+    runtime: python
+    plan: free                       # 무료 티어 (15분 미사용 시 잠듦·요청 시 자동 기상)
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd server && uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    # region: singapore              # (선택) 한국 지연을 줄이려면 주석 해제 — Oregon(기본)도 무료

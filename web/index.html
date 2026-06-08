@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ko" data-theme="pastel">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>학습 올인원</title>
+  <link rel="stylesheet" href="styles.css">
+  <script>/* 미리보기/딥링크: ?theme=light|dark|pastel */
+    (function(){ var m=(location.search||'').match(/theme=([a-z]+)/); if(m) document.documentElement.setAttribute('data-theme', m[1]); })();
+  </script>
+</head>
+<body>
+  <!-- 사이드바 -->
+  <aside class="side">
+    <div class="brand"><div class="logo">🎓</div><div><b>학습 올인원</b><span>오늘도 한 걸음 🌱</span></div></div>
+    <nav class="nav">
+      <button class="on" data-view="convert"><span class="i">📄</span> 변환</button>
+      <button data-view="trainer"><span class="i">🧠</span> 코드연습</button>
+      <button data-view="helper"><span class="i">💬</span> 코드도우미</button>
+      <button data-view="support"><span class="i">🎧</span> 고객센터</button>
+      <button data-view="settings"><span class="i">⚙️</span> 설정</button>
+    </nav>
+    <button class="themebtn" id="themeCycle">🎨 테마 · 파스텔</button>
+    <div id="sideStatus" class="foot none"><b>● 키 미설정</b>설정에서 API 키를 등록하세요</div>
+  </aside>
+
+  <main class="main">
+    <!-- ───── 변환 ───── -->
+    <section id="view-convert" class="view on">
+      <div class="top">
+        <div><h1>수업 노트 변환 📄</h1><p>Jupyter 노트북을 깔끔한 학습노트로!</p></div>
+        <span id="convPill" class="pill none"><span class="dot"></span> 모델 미설정</span>
+      </div>
+      <div class="row">
+        <span id="fileChip" class="chip">아직 선택된 파일이 없습니다.</span>
+        <button class="btn ghost" id="btnOpen">📂 파일 열기</button>
+        <div class="spacer"></div>
+        <div class="seg" id="viewSeg">
+          <button data-v="raw">원본 변환</button>
+          <button class="on" data-v="note">✨ AI 요점정리</button>
+        </div>
+      </div>
+      <div class="row" id="levelRow">
+        <div class="lvl"><b>요약 정도</b>
+          <button class="tag on" data-lvl="concise">핵심 요약</button>
+          <button class="tag" data-lvl="standard">표준</button>
+          <button class="tag" data-lvl="cheatsheet">치트시트</button>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn ghost sm" id="btnGeminiKey">🔑 무료 Gemini 키</button>
+      </div>
+      <div class="card md" id="convPreview">
+        <div class="placeholder">위 <b>[📂 파일 열기]</b>로 .ipynb 를 고르면 변환 결과가 여기에 나타나요.<br>
+          · <b>원본 변환</b>: 내용 그대로 · <b>✨ AI 요점정리</b>: 핵심만 추려 학습노트로 (추천)</div>
+      </div>
+      <div class="bottom">
+        <button class="btn" id="btnSave">💾 .md 로 저장</button>
+        <span id="convStatus" class="status"></span>
+      </div>
+    </section>
+
+    <!-- ───── 코드연습 ───── -->
+    <section id="view-trainer" class="view">
+      <div class="top">
+        <div><h1>코드연습 🧠</h1><p id="trScope">예시 없이 스스로 코딩하는 힘 기르기</p></div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <span id="trTimer" class="timer"></span>
+          <button class="btn ghost sm" id="btnCheat">📖 치트시트</button>
+          <button class="btn ghost sm" id="btnReChoose">🔄 주제 선택</button>
+        </div>
+      </div>
+      <div class="banner" id="trBanner">주제를 고르면 시작해요.</div>
+      <div class="t-grid">
+        <div class="t-col left">
+          <div class="sec">문제 <span id="trProgress" class="timer"></span></div>
+          <div class="card md" id="trProblem" style="flex:0 0 auto; max-height:46%;"><div class="placeholder">주제 선택을 기다리는 중…</div></div>
+          <div class="sec">①  한국어로 ‘무엇을, 어떤 순서로’ (필수)</div>
+          <textarea class="qbox k-area" id="trKorean" placeholder="예) 1) total을 0으로 둔다  2) 1부터 n까지 더한다  3) 출력한다"></textarea>
+          <button class="btn gate" id="trGate">단계 다 썼어요 — 코드 시작 ▶</button>
+        </div>
+        <div class="t-col right">
+          <div class="sec">②  코드 작성하고 실행</div>
+          <textarea class="codebox code-area" id="trCode" spellcheck="false" disabled># 1단계(한국어 설계)를 먼저 끝내면 열려요</textarea>
+          <div class="actions">
+            <button class="btn" id="trRun">▶ 실행</button>
+            <button class="btn ghost sm" id="trHint">💡 힌트</button>
+            <button class="btn ghost sm" id="trAnswer">정답 🔒</button>
+            <div class="spacer"></div>
+            <button class="btn ghost sm" id="trNext">다음 →</button>
+          </div>
+          <div class="sec">결과 · 힌트 · 정답</div>
+          <div class="card md fb" id="trFeedback"><div class="placeholder">여기에 실행 결과와 힌트가 표시돼요.</div></div>
+        </div>
+      </div>
+      <!-- 주제 선택 오버레이 -->
+      <div class="overlay" id="trChooser">
+        <div class="sheet">
+          <h2>무엇을 연습할까요?</h2>
+          <div class="sub">한 주제(단계)를 고르면 그 단원만 집중 연습해요. ⭐는 지금 가장 약한 주제!</div>
+          <button class="btn weakall" id="trWeakAll">⭐ 약점 우선 (전체 주제 섞어서)</button>
+          <div class="t-list" id="trTopicList"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───── 코드도우미 ───── -->
+    <section id="view-helper" class="view">
+      <div class="top">
+        <div><h1>코드 도우미 💬</h1><p>모르는 코드를 붙여넣으면 왜 그렇게 짰는지 설명해 줘요</p></div>
+        <span id="helpPill" class="pill none"><span class="dot"></span> Gemini 미설정</span>
+      </div>
+      <div class="sec">①  코드 — 모르는 코드를 붙여넣기</div>
+      <textarea class="codebox" id="hpCode" spellcheck="false" style="height:170px;" placeholder="여기에 코드를 붙여넣으세요 (예: for i in range(5): ...)"></textarea>
+      <div class="sec" style="margin-top:12px;">②  질문</div>
+      <textarea class="qbox" id="hpQ" style="height:64px;" placeholder="예) 이 코드 왜 이렇게 짜요? / range가 뭐예요?"></textarea>
+      <div class="actions" style="margin:12px 0;">
+        <button class="btn" id="hpAsk">물어보기 ▶</button>
+        <button class="btn ghost sm" id="hpClear">지우기</button>
+        <div class="spacer"></div>
+        <span id="hpStatus" class="status"></span>
+      </div>
+      <div class="sec">③  답변</div>
+      <div class="card md" id="hpAnswer"><div class="placeholder">코드와 질문을 넣고 <b>물어보기 ▶</b>를 눌러보세요.</div></div>
+    </section>
+
+    <!-- ───── 고객센터 ───── -->
+    <section id="view-support" class="view">
+      <div class="top">
+        <div><h1>고객센터 🎧</h1><p>사용 중 궁금한 점을 물어보세요. 앱 사용법을 도와드려요.</p></div>
+        <span id="supPill" class="pill none"><span class="dot"></span> 키 미설정</span>
+      </div>
+      <div class="chips" id="supChips">
+        <button class="chip-q">변환은 어떻게 쓰나요?</button>
+        <button class="chip-q">API 키는 어디서 등록하나요?</button>
+        <button class="chip-q">코드연습은 어떻게 하나요?</button>
+        <button class="chip-q">버튼이 안 눌려요</button>
+      </div>
+      <div class="chat" id="supChat">
+        <div class="msg bot md"><p>안녕하세요! 학습 올인원 고객센터예요 🎧<br>변환·코드연습·코드도우미·키 등록 등 <b>사용법</b>을 도와드려요. 무엇이 궁금하세요?</p></div>
+      </div>
+      <div class="chatbar">
+        <textarea class="qbox" id="supInput" placeholder="궁금한 점을 입력하고 Enter (줄바꿈은 Shift+Enter)"></textarea>
+        <button class="btn" id="supSend">보내기 ▶</button>
+      </div>
+    </section>
+
+    <!-- ───── 설정 ───── -->
+    <section id="view-settings" class="view">
+      <div class="top"><div><h1>설정 ⚙️</h1><p>테마와 API 키를 관리해요. 키는 이 PC에만 저장됩니다.</p></div></div>
+      <div style="overflow:auto;">
+        <div class="set-card">
+          <h3>🎨 테마</h3>
+          <p>원하는 디자인을 고르세요. 사이드바의 테마 버튼으로도 빠르게 바꿀 수 있어요. (선택은 저장됩니다)</p>
+          <div class="themes" id="themeOpts">
+            <button class="theme-opt" data-theme="pastel"><span class="swatch"><i style="background:#FBF7FF;border:1px solid #EFE8FA"></i><i style="background:#7C3AED"></i><i style="background:#F3EAFF"></i></span><b>프렌들리 파스텔</b><span>학생 친화·따뜻함</span></button>
+            <button class="theme-opt" data-theme="light"><span class="swatch"><i style="background:#F6F7FB;border:1px solid #ECEEF3"></i><i style="background:#4F46E5"></i><i style="background:#EEF0FF"></i></span><b>모던 라이트</b><span>깔끔·범용 SaaS</span></button>
+            <button class="theme-opt" data-theme="dark"><span class="swatch"><i style="background:#0B1120"></i><i style="background:#818CF8"></i><i style="background:#1B2440"></i></span><b>다크 포커스</b><span>개발·집중·눈편함</span></button>
+          </div>
+        </div>
+        <div class="set-card">
+          <h3>💬 Gemini 키 (무료 · 누구나)</h3>
+          <p>누구나 <b>무료</b>로 쓸 수 있어요. <b>코드도우미는 항상 Gemini</b>, 요점정리는 Claude 키가 없을 때 Gemini로 동작해요. <a href="#" id="lnkGem">AI Studio에서 무료 키 만들기 ↗</a></p>
+          <div class="keyrow"><input id="inGem" type="password" placeholder="AIza…"><button class="btn sm" id="saveGem">저장</button></div>
+          <div class="kstat off" id="stGem">미설정</div>
+        </div>
+        <div class="set-card">
+          <h3>✨ Claude 키 (고품질 · 요점정리 우선)</h3>
+          <p>요점정리 품질을 ‘수업정리 노트’ 수준으로 올려줘요. Anthropic API는 유료(요청당 소량). <b>등록하면 요점정리에 Claude가 우선 사용됩니다</b>(Gemini도 함께 등록돼 있어도 Claude). <a href="#" id="lnkClaude">콘솔에서 키 만들기 ↗</a></p>
+          <div class="keyrow"><input id="inClaude" type="password" placeholder="sk-ant-…"><button class="btn sm" id="saveClaude">저장</button></div>
+          <div class="kstat off" id="stClaude">미설정</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toasts" id="toasts"></div>
+  <script src="app.js"></script>
+</body>
+</html>
