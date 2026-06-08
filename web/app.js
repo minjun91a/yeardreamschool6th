@@ -27,6 +27,42 @@ function showModal(title, html){
   ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
   document.body.appendChild(ov);
 }
+
+/* ── 첫 방문 사용 가이드(웰컴) ── */
+function showWelcome(force){
+  if(!force && localStorage.getItem('welcomed')) return;   // 첫 방문에만 자동 표시
+  const ov = document.createElement('div'); ov.className = 'overlay on';
+  ov.innerHTML =
+    '<div class="sheet">'+
+      '<h2>🎓 학습 올인원에 오신 걸 환영해요!</h2>'+
+      '<div class="sub">Jupyter 노트 변환 · 스스로 코딩 연습 · 모르는 코드 질문을 한 곳에서.</div>'+
+      '<div class="md" style="overflow:auto; flex:1 1 auto; min-height:0;">'+
+        '<div class="banner">⚡ 시작 전 딱 한 가지 (1분·무료) — AI 기능을 쓰려면 무료 키가 필요해요.</div>'+
+        '<ol>'+
+          '<li><b>무료 Gemini 키 만들기</b> → <a href="#" id="wlkGem">AI Studio에서 발급 ↗</a></li>'+
+          '<li><b>설정 ⚙️</b> 에 붙여넣고 <b>저장</b> → 끝!</li>'+
+        '</ol>'+
+        '<p class="placeholder">그러면 변환·요점정리·코드도우미·고객센터가 모두 열려요. (Claude 키가 있으면 요점정리가 더 고품질)</p>'+
+        '<h3>무엇을 할 수 있나요?</h3>'+
+        '<ul>'+
+          '<li>📄 <b>변환</b> — Jupyter(.ipynb)를 깔끔한 학습노트로</li>'+
+          '<li>🧠 <b>코드연습</b> — 예시 없이 스스로 코딩하고 자동 채점(키 없이도 가능)</li>'+
+          '<li>💬 <b>코드도우미</b> — 모르는 코드를 붙여넣고 질문</li>'+
+          '<li>🎧 <b>고객센터</b> — 사용법이 궁금하면 여기서 물어보세요</li>'+
+        '</ul>'+
+      '</div>'+
+      '<div class="actions" style="margin-top:14px;">'+
+        '<button class="btn" id="wlkKey">🔑 무료 키 등록하러 가기</button>'+
+        '<button class="btn ghost sm" id="wlkClose">먼저 둘러볼게요</button>'+
+      '</div>'+
+    '</div>';
+  const close = ()=>{ try{ localStorage.setItem('welcomed','1'); }catch(e){} ov.remove(); };
+  ov.querySelector('#wlkClose').onclick = close;
+  ov.querySelector('#wlkKey').onclick = ()=>{ close(); navTo('settings'); const i=$('#inGem'); if(i) i.focus(); };
+  ov.querySelector('#wlkGem').onclick = (e)=>{ e.preventDefault(); if(ready()) API.open_url(GEM_URL); };
+  ov.addEventListener('click', e=>{ if(e.target===ov) close(); });
+  document.body.appendChild(ov);
+}
 function insertAt(ta, t){
   const s = ta.selectionStart, e = ta.selectionEnd;
   ta.value = ta.value.slice(0,s) + t + ta.value.slice(e);
@@ -376,6 +412,43 @@ async function supSend(text){
   if(supHistory.length > 12) supHistory.splice(0, supHistory.length - 12);  // 토큰 과다 방지
 }
 
+/* 빠른 질문 4개는 AI 호출 없이 '고정 답변'으로 즉시 응답(키 불필요·오류 없음). 키 텍스트는 칩 글자와 일치. */
+const SUPPORT_FIXED = {
+  '변환은 어떻게 쓰나요?':
+    '<p><b>변환 📄</b> 탭에서 <b>[📂 파일 열기]</b>로 Jupyter 노트북(.ipynb)을 고르면 학습노트로 바뀝니다.</p>'+
+    '<ul><li><b>원본 변환</b> — 내용을 그대로</li>'+
+    '<li><b>✨ AI 요점정리</b> — 핵심만 추려서(핵심요약·표준·치트시트 선택). <b>API 키가 필요</b>해요.</li></ul>'+
+    '<p><b>[💾 .md 로 저장]</b> 으로 저장합니다.</p>',
+  'API 키는 어디서 등록하나요?':
+    '<p><b>설정 ⚙️</b> 탭에서 등록합니다.</p>'+
+    '<ul><li><b>무료 Gemini 키</b> — Google AI Studio에서 무료로 발급 → 설정에 붙여넣고 <b>저장</b></li>'+
+    '<li><b>Claude 키</b>(선택·유료 소액) — 요점정리를 더 고품질로</li></ul>'+
+    '<p class="placeholder">키는 이 브라우저에만 저장되고 서버에는 저장되지 않아요(안전).</p>',
+  '코드연습은 어떻게 하나요?':
+    '<p><b>코드연습 🧠</b> 탭에서:</p>'+
+    '<ol><li>주제 선택</li>'+
+    '<li>① 한국어로 풀이 설계 → ② 코드 작성 후 <b>[▶ 실행]</b> 으로 자동 채점</li>'+
+    '<li>맞으면 <b>백지 복원</b>으로 한 번 더!</li></ol>'+
+    '<p>막히면 <b>[💡 힌트]·[정답]</b> 을 단계적으로 볼 수 있어요. <b>키 없이도</b> 됩니다.</p>'+
+    '<p class="placeholder">첫 실행은 실행 환경 준비로 몇 초 걸릴 수 있어요.</p>',
+  '버튼이 안 눌려요':
+    '<ul><li>주소가 <b>https://…onrender.com</b> 인지 확인</li>'+
+    '<li><b>Ctrl+F5</b> 로 새로고침(옛 캐시 제거)</li>'+
+    '<li>AI 기능이면 <b>설정에서 무료 Gemini 키</b> 등록이 필요해요</li>'+
+    '<li>한동안 방문이 없었다면 서버가 깨어나는 중일 수 있어요 — <b>최대 1분 뒤 다시 시도</b></li></ul>',
+};
+function supFixed(q){
+  const key = (q || '').trim();
+  const ans = SUPPORT_FIXED[key];
+  if(!ans){ return supSend(key); }   // 매핑 없으면 AI로 폴백(안전)
+  supBubble('user', key);
+  supBubble('bot', ans);
+  // 후속 AI 질문 맥락용으로 히스토리에도 평문으로 남김(서버 호출은 안 함)
+  supHistory.push({ role:'user', content:key });
+  supHistory.push({ role:'assistant', content: ans.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim() });
+  if(supHistory.length > 12) supHistory.splice(0, supHistory.length - 12);
+}
+
 /* ── 설정 ── */
 async function saveKey(which){
   if(!ready()) return;
@@ -416,12 +489,14 @@ function wire(){
   // 고객센터
   $('#supSend').addEventListener('click', ()=>supSend());
   $('#supInput').addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); supSend(); } });
-  $$('#supChips .chip-q').forEach(b => b.addEventListener('click', ()=>supSend(b.textContent)));
+  $$('#supChips .chip-q').forEach(b => b.addEventListener('click', ()=>supFixed(b.textContent)));
   // 설정
   $('#saveClaude').addEventListener('click', ()=>saveKey('claude'));
   $('#saveGem').addEventListener('click', ()=>saveKey('gemini'));
   $('#lnkClaude').addEventListener('click', e=>{ e.preventDefault(); if(ready()) API.open_url(CLAUDE_URL); });
   $('#lnkGem').addEventListener('click', e=>{ e.preventDefault(); if(ready()) API.open_url(GEM_URL); });
+  // 사용 가이드(웰컴 다시 보기)
+  $('#btnGuide').addEventListener('click', ()=>showWelcome(true));
   // 테마
   $('#themeCycle').addEventListener('click', cycleTheme);
   $$('#themeOpts .theme-opt').forEach(b => b.addEventListener('click', ()=>applyTheme(b.dataset.theme, true)));
@@ -688,6 +763,7 @@ async function initApi(api){
   API = api;
   try { const r = await API.get_theme(); applyTheme(r.theme, false); } catch(e){}
   refreshKeys();
+  showWelcome(false);   // 첫 방문이면 사용 가이드 자동 표시
 }
 
 wire();
