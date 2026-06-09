@@ -8,9 +8,16 @@
      · 채점 규칙은 데스크톱(core.run_user_code/outputs_match)과 동일하게 메인 스레드가 수행.
        워커는 (stdout, stderr) 만 정확히 돌려준다.
 
+   SQL 트랙(SELECT 연습)도 같은 워커에서 처리한다:
+     · Pyodide 표준 라이브러리의 sqlite3 로 데이터셋(.db)을 읽기전용 조회한다.
+     · 결과 result set 은 core._fmt_resultset 과 '글자 그대로' 같은 규칙으로 정규 텍스트화 →
+       채점은 파이썬 stdout 과 동일한 문자열 비교로 흐른다.
+
    메시지 프로토콜 (메인 → 워커):
-     { type:'warmup' }          : Pyodide 로딩만 미리 수행 → { type:'ready' } | { type:'error', error }
-     { id, code }               : code 실행 → { id, kind:'ok'|'launch', stdout, stderr }
+     { type:'warmup' }                       : Pyodide 로딩만 → { type:'ready' } | { type:'error', error }
+     { id, code }                            : 파이썬 code 실행 → { id, kind:'ok'|'launch', stdout, stderr }
+     { id, kind:'loaddb', dataset }          : 데이터셋(.db) 미리 적재 → { id, kind:'ok'|'launch', ... }
+     { id, kind:'sql', sql, dataset, ordered}: SQL 실행 → { id, kind:'ok'|'launch', stdout, stderr }
 */
 'use strict';
 
@@ -18,14 +25,16 @@
 var PYODIDE_VERSION = 'v0.29.4';
 var PYODIDE_BASE = 'https://cdn.jsdelivr.net/pyodide/' + PYODIDE_VERSION + '/full/';
 
-var _pyReady = null;  // loadPyodide Promise (1회만)
+var _pyReady = null;          // loadPyodide Promise (1회만)
+var _loadedDatasets = {};     // dataset 이름 → Pyodide FS 경로(중복 적재 방지)
 
-// 학습자 코드를 '깨끗한 전역'에서 실행하고 (stdout, stderr) 를 모아 돌려주는 러너.
-// - exec 로 모듈 스크립트처럼 실행( __name__=='__main__' )해 데스크톱과 동작을 맞춘다.
-// - 매 실행 새 네임스페이스를 써서 이전 실행의 변수가 새 채점에 새지 않도록 격리(core 의 -I 와 유사).
-// - SyntaxError/런타임 예외는 traceback 을 stderr 로 흘려보내 friendly_error 가 마지막 줄을 집게 한다.
+// 파이썬 측 정의:
+//  __learn_run__ : 학습자 코드를 '깨끗한 전역'에서 실행하고 (stdout, stderr) 수집.
+//  _fmt_resultset: SQL result set → 정규 텍스트(⚠️ core._fmt_resultset 과 동일해야 함).
+//  __learn_sql__ : 데이터셋 파일에 SQL 을 읽기전용 실행하고 (정규결과, 에러) 반환.
 var RUNNER = [
-  'import sys, io, traceback',
+  'import sys, io, traceback, sqlite3',
+  '',
   'def __learn_run__(src):',
   '    buf, ebuf = io.StringIO(), io.StringIO()',
   '    old_o, old_e = sys.stdout, sys.stderr',
@@ -39,6 +48,33 @@ var RUNNER = [
   '    finally:',
   '        sys.stdout, sys.stderr = old_o, old_e',
   '    return [buf.getvalue(), ebuf.getvalue()]',
+  '',
+  'def _fmt_resultset(cols, rows, ordered=False):',
+  '    def cell(v):',
+  '        if v is None:',
+  '            return "NULL"',
+  '        if isinstance(v, float):',
+  '            return str(int(v)) if v == int(v) else repr(round(v, 6))',
+  '        return str(v)',
+  '    lines = ["\\t".join(cell(v) for v in row) for row in rows]',
+  '    if not ordered:',
+  '        lines.sort()',
+  '    return "\\n".join(lines)',
+  '',
+  'def __learn_sql__(path, sql, ordered):',
+  '    try:',
+  '        con = sqlite3.connect(path)',
+  '        try:',
+  '            con.execute("PRAGMA query_only = ON")',
+  '            cur = con.cursor()',
+  '            cur.execute(sql)',
+  '            rows = cur.fetchall()',
+  '            cols = [d[0] for d in (cur.description or [])]',
+  '            return [_fmt_resultset(cols, rows, bool(ordered)), ""]',
+  '        finally:',
+  '            con.close()',
+  '    except BaseException as e:',
+  '        return ["", "SQLError: " + str(e)]',
 ].join('\n');
 
 function ensurePyodide() {
@@ -47,11 +83,24 @@ function ensurePyodide() {
       importScripts(PYODIDE_BASE + 'pyodide.js');
       // indexURL 을 명시해 WASM/패키지 데이터를 같은 CDN 에서 받도록 한다.
       var py = await loadPyodide({ indexURL: PYODIDE_BASE });
-      py.runPython(RUNNER);  // __learn_run__ 정의(1회)
+      py.runPython(RUNNER);  // __learn_run__ / _fmt_resultset / __learn_sql__ 정의(1회)
       return py;
     })();
   }
   return _pyReady;
+}
+
+// 데이터셋(.db)을 같은 출처(/sql/<파일>)에서 받아 Pyodide FS 에 쓴다. 한 번 받으면 캐시.
+async function ensureDataset(py, dataset) {
+  if (_loadedDatasets[dataset]) return _loadedDatasets[dataset];
+  var url = new URL('sql/' + dataset, self.location.href).href;
+  var resp = await fetch(url);
+  if (!resp.ok) throw new Error('데이터 파일을 불러오지 못했어요 (' + resp.status + '): ' + dataset);
+  var buf = new Uint8Array(await resp.arrayBuffer());
+  var path = '/ds_' + dataset.replace(/[^A-Za-z0-9_.-]/g, '_');
+  py.FS.writeFile(path, buf);
+  _loadedDatasets[dataset] = path;
+  return path;
 }
 
 self.onmessage = async function (e) {
@@ -68,8 +117,45 @@ self.onmessage = async function (e) {
     return;
   }
 
-  // 2) 코드 실행 요청
   var id = msg.id;
+
+  // 2) 데이터셋 미리 적재(SQL 세션 진입 시). 다운로드 지연을 실행 제한시간과 분리하기 위함.
+  if (msg.kind === 'loaddb') {
+    try {
+      var pyd = await ensurePyodide();
+      await ensureDataset(pyd, msg.dataset || '');
+      self.postMessage({ id: id, kind: 'ok', stdout: 'LOADED', stderr: '' });
+    } catch (err) {
+      self.postMessage({ id: id, kind: 'launch', stdout: '', stderr: String((err && err.message) || err) });
+    }
+    return;
+  }
+
+  // 3) SQL 실행
+  if (msg.kind === 'sql') {
+    var pys;
+    try {
+      pys = await ensurePyodide();
+      await ensureDataset(pys, msg.dataset || '');
+    } catch (err) {
+      self.postMessage({ id: id, kind: 'launch', stdout: '', stderr: String((err && err.message) || err) });
+      return;
+    }
+    try {
+      var path = _loadedDatasets[msg.dataset || ''];
+      var fnq = pys.globals.get('__learn_sql__');
+      var resq = fnq(path, msg.sql || '', !!msg.ordered);
+      var arrq = resq.toJs();
+      resq.destroy();
+      fnq.destroy();
+      self.postMessage({ id: id, kind: 'ok', stdout: arrq[0] || '', stderr: arrq[1] || '' });
+    } catch (err) {
+      self.postMessage({ id: id, kind: 'launch', stdout: '', stderr: String((err && err.message) || err) });
+    }
+    return;
+  }
+
+  // 4) 파이썬 코드 실행 요청(기본)
   var code = msg.code || '';
   var py;
   try {

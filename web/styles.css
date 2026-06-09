@@ -62,6 +62,13 @@ a{ color:var(--accent); }
 .nav button .i{ width:22px; text-align:center; font-size:16px; }
 .nav button:hover{ background:var(--hover); }
 .nav button.on{ background:var(--surface); color:var(--accent); box-shadow:var(--sh-sm); }
+.nav button .badge{ margin-left:auto; width:9px; height:9px; border-radius:50%; background:#ef4444;
+  box-shadow:0 0 0 2px var(--surface); flex:0 0 auto; }
+.notice-item{ padding:14px 4px; border-bottom:1px solid var(--line); }
+.notice-item:last-child{ border-bottom:none; }
+.notice-h{ display:flex; align-items:baseline; gap:10px; margin-bottom:6px; }
+.notice-h b{ font-size:15px; color:var(--ink); }
+.notice-date{ margin-left:auto; font-size:12px; color:var(--muted); flex:0 0 auto; }
 .themebtn{ margin:6px 0 10px; padding:11px 14px; border:none; border-radius:var(--r-md); background:var(--surface);
   color:var(--ink); font-weight:700; font-size:13px; box-shadow:var(--sh-sm); display:flex; align-items:center; gap:10px; }
 .themebtn:hover{ background:var(--accent-soft); color:var(--accent); }

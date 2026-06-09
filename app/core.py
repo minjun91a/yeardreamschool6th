@@ -30,8 +30,10 @@ import logging
 import os
 import random
 import re
+import sqlite3
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import date, datetime
@@ -49,6 +51,7 @@ APP_DIR = Path(__file__).resolve().parent          # 학습올인원/app
 BASE = APP_DIR.parent                               # 학습올인원/
 DATA_DIR = BASE / "data"
 PROBLEM_BANK_DIR = BASE / "문제은행"
+SQL_DATA_DIR = BASE / "web" / "sql"                 # SQL 실습용 .db (브라우저에도 /sql/ 로 서빙)
 CODE_QA_DIR = BASE / "코드질문"
 PROGRESS_FILE = DATA_DIR / "study_progress.json"
 UI_FILE = DATA_DIR / "ui_settings.json"             # 테마 등 UI 설정
@@ -306,6 +309,66 @@ def normalize_output(s: str) -> str:
 
 def outputs_match(got: str, expected: str) -> bool:
     return normalize_output(got) == normalize_output(expected)
+
+
+# ── SQL 실행/채점 ─────────────────────────────────────────────────────────────
+# 코드연습 'SQL 트랙'. SQLite(표준화) — Pyodide 의 sqlite3 와 동일 엔진이라 결과가 일치한다.
+# 채점은 result set 을 '정규 텍스트'로 직렬화해 문자열로 비교한다(파이썬 stdout 채점과 동일 흐름).
+#   · 셀: None→"NULL", 정수형 실수→정수, 그 외 실수→6자리 반올림, 나머지는 str()
+#   · 열 '값'만 (열 이름표는 비교 안 함 → 별칭/대소문자에 견고). 열 개수·순서는 자동 반영됨.
+#   · ordered=False(기본): 행 순서를 무시(정렬 후 비교). ORDER BY 단원은 ordered=True 로 순서까지 채점.
+# ⚠️ 이 포매터는 web/pyodide-worker.js 의 _fmt_resultset 과 '글자 그대로' 같아야 한다(둘 다 SQLite).
+def _fmt_resultset(cols, rows, ordered: bool = False) -> str:
+    def cell(v):
+        if v is None:
+            return "NULL"
+        if isinstance(v, float):
+            return str(int(v)) if v == int(v) else repr(round(v, 6))
+        return str(v)
+    lines = ["\t".join(cell(v) for v in row) for row in rows]
+    if not ordered:
+        lines.sort()
+    return "\n".join(lines)
+
+
+def run_sql_query(dataset: str, sql: str, ordered: bool = False):
+    """SQL 정답/학습자 쿼리를 데이터셋(.db)에 대해 읽기전용으로 실행. (kind, out, err) 반환.
+
+    kind: ok / empty / launch
+    데이터 원본 보호를 위해 read-only(uri mode=ro) + query_only PRAGMA 로 연다.
+    """
+    if not (sql or "").strip():
+        return ("empty", "", "")
+    db = SQL_DATA_DIR / (dataset or "")
+    if not dataset or not db.exists():
+        return ("launch", "", f"데이터 파일을 찾을 수 없어요: {dataset or '(미지정)'}")
+    con = None
+    try:
+        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+        con.execute("PRAGMA query_only = ON")
+        cur = con.cursor()
+        cur.execute(sql)
+        rows = cur.fetchall()
+        cols = [d[0] for d in (cur.description or [])]
+        return ("ok", _fmt_resultset(cols, rows, ordered), "")
+    except Exception as e:  # noqa: BLE001
+        return ("launch", "", f"SQLError: {e}")
+    finally:
+        if con is not None:
+            try:
+                con.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _preview_rows(text: str, n: int = 15) -> str:
+    """예상 결과 미리보기: 앞 n행만 보여주고 너무 길면 총 행수를 덧붙인다."""
+    lines = (text or "").split("\n") if text else []
+    if not text:
+        return "(결과 0행)"
+    if len(lines) <= n:
+        return text
+    return "\n".join(lines[:n]) + f"\n… (총 {len(lines)}행)"
 
 
 def friendly_error(stderr: str) -> str:
@@ -571,6 +634,79 @@ def describe_code_korean(ans: str) -> str:
     return "\n".join(f"{i}. {s}" for i, s in enumerate(steps, 1))
 
 
+# ── SQL 트랙 전용 힌트(파이썬 힌트와 별개로 동작) ──
+SQL_TOOL_MAP = {
+    "SQL SELECT 기초": "조회는 `SELECT 열1, 열2 FROM 테이블;`. 모든 열은 `*`, 앞 몇 행만은 `LIMIT n`.",
+    "SQL DISTINCT": "중복 제거는 `SELECT DISTINCT 열 FROM 테이블;`. 여러 열을 함께 쓰면 그 '조합' 기준으로 중복을 없앤다.",
+    "SQL WHERE 조건": "조건은 `WHERE 열 비교 값`. 비교는 `=  !=  >  <  >=  <=`, 문자열은 작은따옴표 `'USA'`.",
+    "SQL AND·OR·NOT": "여러 조건은 `AND`(둘 다) · `OR`(하나라도) 로 잇고, '아닌 것'은 `!=` 또는 `NOT`.",
+    "SQL BETWEEN·IN": "범위는 `열 BETWEEN a AND b`(a·b 포함), 목록은 `열 IN ('A','B')`, 제외는 `열 NOT IN (...)`.",
+    "SQL LIKE 패턴": "부분 일치는 `열 LIKE '패턴'`. `%`=아무 글자 0개 이상. 시작 `'Rock%'`, 끝 `'%Live'`, 포함 `'%Love%'`.",
+    "SQL ORDER BY 정렬": "정렬은 `ORDER BY 열 ASC|DESC`(ASC 오름차순=기본, DESC 내림차순). 상위 몇 개는 `LIMIT n`.",
+}
+GENERIC_SQL_HINT = "필요한 열을 SELECT 뒤에, 어느 테이블인지 FROM 뒤에. 조건은 WHERE, 정렬은 ORDER BY 로."
+
+
+def sql_intent_hint(topic: str) -> str:
+    return SQL_TOOL_MAP.get(topic, GENERIC_SQL_HINT)
+
+
+def sql_skeleton_hint(ans: str) -> str:
+    """정답에 등장하는 절만 키워드 뼈대로 남긴다(값은 ___ 로 가림)."""
+    up = " " + (ans or "").upper() + " "
+    parts = ["SELECT ___"]
+    if " FROM " in up:
+        parts.append("FROM ___")
+    if " WHERE " in up:
+        parts.append("WHERE ___")
+    if " ORDER BY " in up:
+        parts.append("ORDER BY ___")
+    if " LIMIT " in up:
+        parts.append("LIMIT ___")
+    return "\n".join(parts) + ";"
+
+
+def sql_korean_example(ans: str) -> str:
+    up = (ans or "").upper()
+    steps = ["어떤 열을 볼지 SELECT 뒤에 적는다 (전체면 *)",
+             "어느 테이블에서 가져올지 FROM 뒤에 적는다"]
+    if "DISTINCT" in up:
+        steps.insert(1, "DISTINCT 로 중복을 없앤다")
+    if " WHERE " in (" " + up):
+        steps.append("조건을 WHERE 로 거른다")
+    if "ORDER BY" in up:
+        steps.append("ORDER BY 로 정렬한다 (DESC=내림차순)")
+    if "LIMIT" in up:
+        steps.append("LIMIT 으로 앞 몇 행만 남긴다")
+    return "\n".join(f"{i}. {s}" for i, s in enumerate(steps, 1))
+
+
+# ── 종류별 공용 헬퍼(서버·데스크톱이 동일하게 호출) ──
+def problem_hints(p: dict) -> dict:
+    """문제 종류(python/sql)에 맞는 힌트 묶음 {intent, skeleton, korean_example}."""
+    if p.get("kind") == "sql":
+        return {"intent": sql_intent_hint(p.get("topic", "")),
+                "skeleton": sql_skeleton_hint(p.get("ans", "")),
+                "korean_example": sql_korean_example(p.get("ans", ""))}
+    return {"intent": intent_hint(p.get("topic", "")),
+            "skeleton": skeleton_hint(p.get("ans", "")),
+            "korean_example": describe_code_korean(p.get("ans", ""))}
+
+
+def run_problem(p: dict, code: str):
+    """문제 종류에 맞게 학습자 코드/쿼리를 실행. (kind, out, err) 반환."""
+    if p.get("kind") == "sql":
+        return run_sql_query(p.get("dataset", ""), code, bool(p.get("ordered", False)))
+    return run_user_code(code)
+
+
+def cheatsheet_md() -> str:
+    """치트시트(의도 → 도구) 마크다운 — 파이썬 단원 + SQL 단원 도구를 함께 담는다."""
+    parts = [f"### {t}\n{tip}\n" for t, tip in TOOL_MAP.items()]
+    parts += [f"### {t}\n{tip}\n" for t, tip in SQL_TOOL_MAP.items()]
+    return "\n".join(parts)
+
+
 # ════════════════════════════════════════════════════════════════════════════
 #  5) 마크다운 문제은행 (커리큘럼 단원 확장)
 # ════════════════════════════════════════════════════════════════════════════
@@ -583,21 +719,34 @@ def parse_problem_md(text: str):
     m = re.search(r"^#\s*단계\s*[:：]\s*(\d+)", text, re.M)
     if m:
         stage = int(m.group(1))
-    body = re.sub(r"^#\s*(주제|단계)\s*[:：].*$", "", text, flags=re.M)
+    # 파일 단위 SQL 메타데이터(SQL 단원에서만 의미). 종류=sql, 데이터=<db파일>, 정렬채점=on/예/...
+    m = re.search(r"^#\s*종류\s*[:：]\s*(\w+)", text, re.M)
+    file_kind = m.group(1).strip().lower() if m else ""
+    m = re.search(r"^#\s*데이터\s*[:：]\s*(.+)$", text, re.M)
+    dataset = m.group(1).strip() if m else ""
+    m = re.search(r"^#\s*정렬\s*채?점?\s*[:：]\s*(.+)$", text, re.M)
+    ordered = bool(m and m.group(1).strip().lower() in ("on", "예", "yes", "true", "중요", "1"))
+    body = re.sub(r"^#\s*(주제|단계|종류|데이터|정렬)[^:：\n]*[:：].*$", "", text, flags=re.M)
     blocks = re.split(r"^\s*-{3,}\s*$", body, flags=re.M)
     problems = []
     for blk in blocks:
-        codem = re.search(r"```(?:python|py)?\s*\n(.*?)```", blk, re.S)
+        codem = re.search(r"```(\w+)?[ \t]*\n(.*?)```", blk, re.S)
         if not codem:
             continue
-        answer = codem.group(1).rstrip("\n")
+        lang = (codem.group(1) or "").lower()
+        answer = codem.group(2).rstrip("\n")
         if not answer.strip():
             continue
+        kind = "sql" if (lang == "sql" or file_kind == "sql") else "python"
         prompt = blk[:codem.start()]
         prompt = re.sub(r"^##\s*(문제|풀이)\s*$", "", prompt, flags=re.M)
         prompt = re.sub(r"^>.*$", "", prompt, flags=re.M)
         prompt = re.sub(r"^#\s+.*$", "", prompt, flags=re.M)
-        problems.append({"q": prompt.strip() or "(문제 설명 없음)", "answer": answer})
+        prob = {"q": prompt.strip() or "(문제 설명 없음)", "answer": answer, "kind": kind}
+        if kind == "sql":
+            prob["dataset"] = dataset
+            prob["ordered"] = ordered
+        problems.append(prob)
     return topic, stage, problems
 
 
@@ -650,6 +799,8 @@ def all_topics(allowed=None) -> list[str]:
 
 
 def _materialize_md_problem(topic: str, spec: dict):
+    if spec.get("kind") == "sql":
+        return _materialize_sql_problem(topic, spec)
     if "out" not in spec:
         kind, out, err = run_user_code(spec.get("answer", ""))
         if kind == "ok" and not err.strip():
@@ -661,7 +812,29 @@ def _materialize_md_problem(topic: str, spec: dict):
         return None
     expected = spec["out"].strip()
     display_q = spec.get("q", "") + f"\n\n**예상 출력**\n```\n{expected}\n```"
-    return dict(topic=topic, q=display_q, ans=spec.get("answer", ""), out=spec["out"])
+    return dict(topic=topic, q=display_q, ans=spec.get("answer", ""), out=spec["out"], kind="python")
+
+
+def _materialize_sql_problem(topic: str, spec: dict):
+    """SQL 문제: 정답 쿼리를 데이터셋에 실행해 예상 result set 을 산출(1회 캐시).
+
+    실행에 실패하면 None 을 돌려보내 make_problem 이 다른 후보로 넘어가게 한다(채점 불가 문제 배제).
+    """
+    dataset = spec.get("dataset", "")
+    ordered = bool(spec.get("ordered", False))
+    if "out" not in spec:
+        kind, out, err = run_sql_query(dataset, spec.get("answer", ""), ordered)
+        if kind == "ok":
+            spec["out"] = out
+        else:
+            spec["out"] = None
+            log.warning("SQL 풀이 실행 실패(%s): kind=%s err=%s", topic, kind, err)
+    if spec.get("out") is None:
+        return None
+    preview = _preview_rows(spec["out"])
+    display_q = spec.get("q", "") + f"\n\n**예상 결과** (`{dataset}`)\n```\n{preview}\n```"
+    return dict(topic=topic, q=display_q, ans=spec.get("answer", ""), out=spec["out"],
+                kind="sql", dataset=dataset, ordered=ordered)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -697,8 +870,9 @@ def make_problem(topic: str) -> dict:
             p.setdefault("q", "(문제 설명 없음)")
             p.setdefault("ans", "")
             p.setdefault("out", "")
+            p.setdefault("kind", "python")
             return p
-    return dict(topic=topic, ans="", out="",
+    return dict(topic=topic, ans="", out="", kind="python",
                 q=f"**[{topic}]** 이 단원의 문제를 불러오지 못했어요. 문제은행 .md 를 확인해 주세요.")
 
 
@@ -835,7 +1009,11 @@ SUMMARY_LEVELS = {
 
 
 class GeminiError(Exception):
-    """사용자에게 그대로 보여 줄 한국어 오류 메시지."""
+    """사용자에게 그대로 보여 줄 한국어 오류 메시지. code=HTTP 상태(폴백 판단용, 없으면 None)."""
+
+    def __init__(self, message, code=None):
+        super().__init__(message)
+        self.code = code
 
 
 def load_api_key() -> str:
@@ -909,9 +1087,11 @@ def _explain_http_error(code: int, detail: str) -> str:
         400: "요청 형식 또는 API 키에 문제가 있습니다. 키를 다시 확인하세요.",
         403: "API 키 권한 문제입니다. Google AI Studio에서 키 상태를 확인하세요.",
         404: f"모델을 찾을 수 없습니다. 모델명('{DEFAULT_MODEL}')을 확인하세요.",
-        429: "무료 사용 한도를 초과했습니다. 잠시 후 다시 시도하세요.",
+        429: ("무료 Gemini 사용 한도를 초과했어요(분당/하루 요청 제한). 잠시 후 다시 시도하거나, "
+              "Claude 키를 등록하면 한도일 때 자동으로 Claude로 전환돼요. "
+              "자주 쓰면 키에 결제를 등록해 한도를 크게 올릴 수 있어요(저렴)."),
         500: "Gemini 서버 일시 오류입니다. 잠시 후 다시 시도하세요.",
-        503: "Gemini 서버가 혼잡합니다. 잠시 후 다시 시도하세요.",
+        503: "Gemini 서버가 혼잡합니다. 잠시 후 다시 시도하세요(앱이 자동으로 몇 번 재시도해요).",
     }
     return f"{table.get(code, f'HTTP 오류({code})')}\n[상세] {snippet}"
 
@@ -930,8 +1110,12 @@ def _diagnose_empty(payload: dict) -> str:
 
 def _gemini_generate(system_instruction: str, user_text: str, api_key: str,
                      model: str = DEFAULT_MODEL, timeout: int = 60,
-                     max_tokens: int = 4096) -> str:
-    """Gemini generateContent 공용 호출. 실패 시 GeminiError(한국어)."""
+                     max_tokens: int = 4096, retries: int = 2) -> str:
+    """Gemini generateContent 공용 호출. 실패 시 GeminiError(한국어, code=HTTP).
+
+    일시적 혼잡/서버오류(503/500)·네트워크 블립은 지수 백오프로 retries 회 자동 재시도한다.
+    429(무료 한도 초과)는 재시도해도 풀리지 않으므로 즉시 올려보내 상위에서 Claude 폴백/안내하게 한다.
+    """
     if not api_key:
         raise GeminiError("API 키가 없습니다. 먼저 'API 키 설정'에서 무료 키를 등록하세요.")
     url = f"{API_BASE}/{model}:generateContent"
@@ -944,22 +1128,33 @@ def _gemini_generate(system_instruction: str, user_text: str, api_key: str,
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/json")
     req.add_header("x-goog-api-key", api_key)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode("utf-8", "replace")
-    except urllib.error.HTTPError as e:
-        detail = ""
+    raw = None
+    for attempt in range(retries + 1):
         try:
-            detail = e.read().decode("utf-8", "replace")
-        except Exception:  # noqa: BLE001
-            pass
-        log.error("HTTPError %s", e.code)
-        raise GeminiError(_explain_http_error(e.code, detail))
-    except urllib.error.URLError as e:
-        raise GeminiError(f"네트워크에 연결할 수 없습니다: {e.reason}\n인터넷/방화벽/프록시를 확인하세요.")
-    except Exception as e:  # noqa: BLE001
-        log.exception("호출 오류")
-        raise GeminiError(f"알 수 없는 오류: {e}")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read().decode("utf-8", "replace")
+            break
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                detail = e.read().decode("utf-8", "replace")
+            except Exception:  # noqa: BLE001
+                pass
+            log.error("HTTPError %s (시도 %d/%d)", e.code, attempt + 1, retries + 1)
+            if e.code in (500, 503) and attempt < retries:
+                time.sleep(1.5 * (attempt + 1))   # 1.5s, 3.0s 백오프
+                continue
+            raise GeminiError(_explain_http_error(e.code, detail), code=e.code)
+        except urllib.error.URLError as e:
+            if attempt < retries:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            raise GeminiError(f"네트워크에 연결할 수 없습니다: {e.reason}\n인터넷/방화벽/프록시를 확인하세요.")
+        except Exception as e:  # noqa: BLE001
+            log.exception("호출 오류")
+            raise GeminiError(f"알 수 없는 오류: {e}")
+    if raw is None:
+        raise GeminiError("응답을 받지 못했습니다. 잠시 후 다시 시도하세요.")
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError:
@@ -1024,7 +1219,7 @@ def _anthropic_generate(system: str, messages: list, api_key: str, max_tokens: i
         except Exception:  # noqa: BLE001
             pass
         log.error("Anthropic HTTPError %s", e.code)
-        raise GeminiError(_explain_anthropic_error(e.code, detail))
+        raise GeminiError(_explain_anthropic_error(e.code, detail), code=e.code)
     except urllib.error.URLError as e:
         raise GeminiError(f"네트워크에 연결할 수 없습니다: {e.reason}\n인터넷/방화벽/프록시를 확인하세요.")
     except Exception as e:  # noqa: BLE001

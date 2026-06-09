@@ -42,13 +42,13 @@ function showWelcome(force){
           '<li><b>무료 Gemini 키 만들기</b> → <a href="#" id="wlkGem">AI Studio에서 발급 ↗</a></li>'+
           '<li><b>설정 ⚙️</b> 에 붙여넣고 <b>저장</b> → 끝!</li>'+
         '</ol>'+
-        '<p class="placeholder">그러면 변환·요점정리·코드도우미·고객센터가 모두 열려요. (Claude 키가 있으면 요점정리가 더 고품질)</p>'+
+        '<p class="placeholder">그러면 노트 변환·요점정리·AI 도우미·도움말이 모두 열려요. (Claude 키가 있으면 요점정리가 더 고품질)</p>'+
         '<h3>무엇을 할 수 있나요?</h3>'+
         '<ul>'+
-          '<li>📄 <b>변환</b> — Jupyter(.ipynb)를 깔끔한 학습노트로</li>'+
-          '<li>🧠 <b>코드연습</b> — 예시 없이 스스로 코딩하고 자동 채점(키 없이도 가능)</li>'+
-          '<li>💬 <b>코드도우미</b> — 모르는 코드를 붙여넣고 질문</li>'+
-          '<li>🎧 <b>고객센터</b> — 사용법이 궁금하면 여기서 물어보세요</li>'+
+          '<li>📄 <b>노트 변환</b> — Jupyter(.ipynb)를 깔끔한 학습노트로</li>'+
+          '<li>🧠 <b>코딩 연습</b> — 예시 없이 스스로 코딩하고 자동 채점(키 없이도 가능)</li>'+
+          '<li>💬 <b>AI 도우미</b> — 모르는 코드를 붙여넣고 질문</li>'+
+          '<li>🎧 <b>도움말</b> — 사용법이 궁금하면 여기서 물어보세요</li>'+
         '</ul>'+
       '</div>'+
       '<div class="actions" style="margin-top:14px;">'+
@@ -88,6 +88,38 @@ function navTo(v){
   $$('.nav button').forEach(b=>b.classList.toggle('on', b.dataset.view===v));
   $$('.view').forEach(s=>s.classList.toggle('on', s.id==='view-'+v));
   if(v==='trainer' && T.phase==='idle') trOpenChooser();
+  if(v==='notice') openNotices();
+}
+
+/* ── 공지사항 ── */
+let noticeData = null, noticeLatest = 0;
+async function loadNotices(){
+  try { const r = await API.get_notices(); noticeData = (r && r.items) || []; }
+  catch(e){ noticeData = []; }
+  noticeLatest = noticeData.reduce((m,n)=>Math.max(m, n.id||0), 0);
+  refreshNoticeBadge();
+}
+function refreshNoticeBadge(){
+  const btn = $('.nav button[data-view="notice"]'); if(!btn) return;
+  let seen = 0; try { seen = +(localStorage.getItem('notices_seen')||0); } catch(e){}
+  let dot = btn.querySelector('.badge');
+  if(noticeLatest > seen){ if(!dot){ dot = document.createElement('span'); dot.className='badge'; btn.appendChild(dot); } }
+  else if(dot){ dot.remove(); }
+}
+function renderNotices(){
+  const box = $('#noticeList'); if(!box) return;
+  if(!noticeData || !noticeData.length){ box.innerHTML = '<div class="placeholder">아직 공지가 없어요.</div>'; return; }
+  // body 는 운영자가 저장소에 직접 쓴 신뢰 콘텐츠(사용자 입력 아님) → HTML 그대로 렌더. 제목·날짜는 이스케이프.
+  box.innerHTML = noticeData.map(n =>
+    '<div class="notice-item"><div class="notice-h"><b>'+esc(n.title)+'</b>'+
+    '<span class="notice-date">'+esc(n.date)+'</span></div>'+
+    '<div class="md">'+(n.body||'')+'</div></div>').join('');
+}
+async function openNotices(){
+  if(noticeData === null) await loadNotices();
+  renderNotices();
+  try { localStorage.setItem('notices_seen', String(noticeLatest)); } catch(e){}
+  refreshNoticeBadge();
 }
 
 /* ── 테마 ── */
@@ -106,8 +138,8 @@ async function refreshKeys(){
   if(!ready()) return;
   const k = await API.keys_status();
   const side = $('#sideStatus');
-  if(k.claude){ side.className='foot'; side.innerHTML='<b>✨ Claude 연결됨 (요점정리 우선)</b>고품질 요약 · 코드도우미는 Gemini'; }
-  else if(k.gemini){ side.className='foot gem'; side.innerHTML='<b>● Gemini 연결됨 (무료)</b>요점정리·코드도우미'; }
+  if(k.claude){ side.className='foot'; side.innerHTML='<b>✨ Claude 연결됨 (요점정리 우선)</b>고품질 요약 · AI 도우미는 Gemini'; }
+  else if(k.gemini){ side.className='foot gem'; side.innerHTML='<b>● Gemini 연결됨 (무료)</b>요점정리·AI 도우미'; }
   else { side.className='foot none'; side.innerHTML='<b>● 키 미설정</b>설정에서 무료 Gemini 키를 등록하세요'; }
   const cp = $('#convPill');
   if(k.claude){ cp.className='pill'; cp.innerHTML='<span class="dot"></span> Claude (우선)'; }
@@ -233,6 +265,9 @@ function startTick(){
     }
   }, 1000);
 }
+// 입력칸 안내문: SQL 단원은 '--'(SQL 주석), 파이썬은 '#'(파이썬 주석)으로 맞춘다.
+function _codePH(){ return T.kind === 'sql' ? '-- 여기에 SQL을 작성하고 [▶ 실행]을 누르세요' : '# 여기에 코드를 작성하고 [▶ 실행]을 누르세요'; }
+function _reconPH(){ return T.kind === 'sql' ? '-- 안 보고 처음부터 다시 쳐보세요' : '# 안 보고 처음부터 다시 쳐보세요'; }
 async function trOpenChooser(){
   if(!ready()) return;
   const r = await API.trainer_topics();
@@ -257,8 +292,9 @@ function trLoad(i){
   T.idx=i; T.elapsed=0; T.attempts=0; T.hint=0; T.kHint=0; T.sawAns=false; T.sawKEx=false; T.solvedOnce=false;
   T.fbRun=''; T.fbHints=[]; T.fbAnswer='';
   const it = T.items[i];
+  T.kind = it.kind || 'python';
   $('#trProblem').innerHTML = it.q_html;
-  $('#trKorean').value=''; $('#trCode').value='# 여기에 코드를 작성하고 [▶ 실행]을 누르세요';
+  $('#trKorean').value=''; $('#trCode').value=_codePH();
   $('#trCode').disabled=true; $('#trTimer').textContent='';
   $('#trProgress').textContent = '〔'+T.scope+'〕 '+(i+1)+'/'+T.count+' · '+it.topic;
   ['trRun','trHint','trAnswer'].forEach(id=>$('#'+id).disabled=false);
@@ -269,7 +305,7 @@ function trLoad(i){
 function trGate(){
   const t = $('#trKorean').value.replace(/\s/g,'');
   if(t.length < KOREAN_MIN){ toast('무엇을 어떤 순서로 할지 한국어로 더 적어 주세요 (예: total을 0으로, 1~n 더하기, 출력)','err'); $('#trKorean').focus(); return; }
-  $('#trCode').value='# 여기에 코드를 작성하고 [▶ 실행]을 누르세요';
+  $('#trCode').value=_codePH();
   applyPhase('coding');
 }
 async function trPrimary(){
@@ -325,7 +361,7 @@ async function trAnswer(){
 }
 function enterReconstruct(){
   T.elapsed=0; T.fbRun=''; T.fbHints=[]; T.fbAnswer=''; renderFB();
-  $('#trCode').value='# 안 보고 처음부터 다시 쳐보세요';
+  $('#trCode').value=_reconPH();
   applyPhase('reconstruct');
 }
 function trNext(){
@@ -364,7 +400,7 @@ async function hpAsk(){
   let r;
   try { r = await API.helper_ask(code, q); }
   finally { hpBusy=false; $('#hpAsk').disabled=false; }
-  if(r.nokey){ toast('코드도우미엔 무료 Gemini 키가 필요해요. 설정에서 등록하세요.','err'); $('#hpStatus').textContent=''; $('#hpAnswer').innerHTML='<div class="placeholder">설정에서 Gemini 키를 먼저 등록해 주세요.</div>'; navTo('settings'); return; }
+  if(r.nokey){ toast('AI 도우미엔 무료 Gemini 키가 필요해요. 설정에서 등록하세요.','err'); $('#hpStatus').textContent=''; $('#hpAnswer').innerHTML='<div class="placeholder">설정에서 Gemini 키를 먼저 등록해 주세요.</div>'; navTo('settings'); return; }
   if(!r.ok){ $('#hpAnswer').innerHTML='<h3>오류가 발생했어요</h3><p>'+esc(r.error||'')+'</p>'; $('#hpStatus').textContent='오류'; $('#hpStatus').className='status err'; return; }
   $('#hpAnswer').innerHTML = r.html;
   $('#hpStatus').textContent = '✓ 완료' + (r.saved? ' · 저장됨 '+r.saved : ''); $('#hpStatus').className='status ok';
@@ -398,7 +434,7 @@ async function supSend(text){
   loading.remove();
   if(r.nokey){
     supHistory.pop();   // 보내지 못한 질문은 히스토리에서 제거
-    supBubble('bot', '<p>고객센터를 이용하려면 <b>무료 Gemini 키</b>가 필요해요. 설정에서 등록해 주세요. 🙂</p>');
+    supBubble('bot', '<p>도움말을 이용하려면 <b>무료 Gemini 키</b>가 필요해요. 설정에서 등록해 주세요. 🙂</p>');
     toast('설정에서 무료 Gemini 키를 등록하세요.','err'); navTo('settings'); return;
   }
   if(!r.ok){
@@ -414,8 +450,8 @@ async function supSend(text){
 
 /* 빠른 질문 4개는 AI 호출 없이 '고정 답변'으로 즉시 응답(키 불필요·오류 없음). 키 텍스트는 칩 글자와 일치. */
 const SUPPORT_FIXED = {
-  '변환은 어떻게 쓰나요?':
-    '<p><b>변환 📄</b> 탭에서 <b>[📂 파일 열기]</b>로 Jupyter 노트북(.ipynb)을 고르면 학습노트로 바뀝니다.</p>'+
+  '노트 변환은 어떻게 쓰나요?':
+    '<p><b>노트 변환 📄</b> 탭에서 <b>[📂 파일 열기]</b>로 Jupyter 노트북(.ipynb)을 고르면 학습노트로 바뀝니다.</p>'+
     '<ul><li><b>원본 변환</b> — 내용을 그대로</li>'+
     '<li><b>✨ AI 요점정리</b> — 핵심만 추려서(핵심요약·표준·치트시트 선택). <b>API 키가 필요</b>해요.</li></ul>'+
     '<p><b>[💾 .md 로 저장]</b> 으로 저장합니다.</p>',
@@ -424,13 +460,20 @@ const SUPPORT_FIXED = {
     '<ul><li><b>무료 Gemini 키</b> — Google AI Studio에서 무료로 발급 → 설정에 붙여넣고 <b>저장</b></li>'+
     '<li><b>Claude 키</b>(선택·유료 소액) — 요점정리를 더 고품질로</li></ul>'+
     '<p class="placeholder">키는 이 브라우저에만 저장되고 서버에는 저장되지 않아요(안전).</p>',
-  '코드연습은 어떻게 하나요?':
-    '<p><b>코드연습 🧠</b> 탭에서:</p>'+
-    '<ol><li>주제 선택</li>'+
+  '코딩 연습은 어떻게 하나요?':
+    '<p><b>코딩 연습 🧠</b> 탭에서:</p>'+
+    '<ol><li>주제 선택(파이썬 기초~클래스, <b>SQL</b> 단원도 있어요)</li>'+
     '<li>① 한국어로 풀이 설계 → ② 코드 작성 후 <b>[▶ 실행]</b> 으로 자동 채점</li>'+
     '<li>맞으면 <b>백지 복원</b>으로 한 번 더!</li></ol>'+
     '<p>막히면 <b>[💡 힌트]·[정답]</b> 을 단계적으로 볼 수 있어요. <b>키 없이도</b> 됩니다.</p>'+
     '<p class="placeholder">첫 실행은 실행 환경 준비로 몇 초 걸릴 수 있어요.</p>',
+  '답변이 안 오거나 한도 초과래요':
+    '<p>AI 답변(요점정리·AI 도우미·도움말)은 <b>무료 Gemini</b>를 쓰는데, 무료는 <b>분당·하루 요청 횟수 한도</b>가 있어요. 한도에 걸리면 이렇게 해보세요:</p>'+
+    '<ol><li><b>잠시 후 다시</b> 시도 — 분당 한도면 1~2분 뒤 풀려요. (앱이 자동으로 몇 번 재시도도 해요)</li>'+
+    '<li>하루 한도면 <b>다음 날</b> 초기화돼요(태평양 시간 자정 기준).</li>'+
+    '<li><b>Claude 키</b>를 설정에 등록하면, Gemini가 한도일 때 <b>도움말이 Claude로 자동 전환</b>돼 답해요.</li>'+
+    '<li>많이 쓰신다면 본인 Gemini 키에 <b>결제 등록</b>(매우 저렴)으로 한도를 크게 올릴 수 있어요.</li></ol>'+
+    '<p class="placeholder">💡 키를 여러 개 만들어도 한도는 합쳐지지 않아요(프로젝트 단위).</p>',
   '버튼이 안 눌려요':
     '<ul><li>주소가 <b>https://…onrender.com</b> 인지 확인</li>'+
     '<li><b>Ctrl+F5</b> 로 새로고침(옛 캐시 제거)</li>'+
@@ -563,8 +606,11 @@ function makeWebApi(){
     if(_pyPending){ clearTimeout(_pyPending.timer); _pyPending = null; }
   }
 
-  // 코드 1건 실행. 로딩 시간과 실행 제한시간을 분리: 준비될 때까지 기다린 뒤 6초 타이머 시작.
-  async function _runInPyodide(code){
+  const DB_LOAD_TIMEOUT_MS = 30000; // 데이터셋(.db) 다운로드는 실행 제한과 분리(첫 1회만 큼)
+
+  // 워커에 한 건 보내고 응답(또는 타임아웃)을 받는 공용 함수. 로딩 시간과 제한시간을 분리:
+  // 준비될 때까지 기다린 뒤 타이머 시작. payload 에 따라 파이썬 실행·데이터로드·SQL 실행을 모두 처리.
+  async function _callWorker(payload, timeoutMs){
     let ok = false;
     try { ok = await _ensurePyReady(); } catch(e){ ok = false; }
     if(!ok || !_pyWorker){
@@ -574,14 +620,23 @@ function makeWebApi(){
     return new Promise((resolve) => {
       const id = ++_pyReqSeq;
       const timer = setTimeout(() => {
-        // 6초 내 무응답 = 무한 루프 추정 → 워커 강제 종료(유일한 탈출구) 후 폐기
+        // 제한시간 내 무응답 = 무한 루프/지연 추정 → 워커 강제 종료(유일한 탈출구) 후 폐기
         if(_pyPending && _pyPending.id === id) _pyPending = null;
         _resetPyWorker();
         resolve({ kind:'timeout', stdout:'', stderr:'' });
-      }, PY_RUN_TIMEOUT_MS);
+      }, timeoutMs);
       _pyPending = { id, resolve, timer };
-      _pyWorker.postMessage({ id, code });
+      _pyWorker.postMessage(Object.assign({ id }, payload));
     });
+  }
+  async function _runInPyodide(code){ return _callWorker({ code }, PY_RUN_TIMEOUT_MS); }
+  async function _loadDatasetInWorker(dataset){ return _callWorker({ kind:'loaddb', dataset }, DB_LOAD_TIMEOUT_MS); }
+  // SQL: 데이터셋을 먼저 적재(다운로드 지연을 6초 실행제한과 분리)한 뒤, 쿼리를 6초 제한으로 실행.
+  async function _runSqlInPyodide(sql, dataset, ordered){
+    const load = await _loadDatasetInWorker(dataset);
+    if(load.kind === 'launch') return load;
+    if(load.kind === 'timeout') return { kind:'launch', stdout:'', stderr:'데이터 파일 로딩이 너무 오래 걸려요. 연결을 확인해 주세요.' };
+    return _callWorker({ kind:'sql', sql, dataset, ordered }, PY_RUN_TIMEOUT_MS);
   }
 
   // ── 채점 규칙 이식(core.normalize_output/outputs_match/friendly_error 와 동일 동작) ──
@@ -606,6 +661,16 @@ function makeWebApi(){
     const last = lines[lines.length - 1].trim();
     for(const key in _ERR_TIPS){ if(last.indexOf(key) >= 0) return last + '\n   → ' + _ERR_TIPS[key]; }
     return last;
+  }
+  // SQL 오류 친절 설명(SQLite 메시지 → 초보자 힌트)
+  function _sqlFriendly(stderr){
+    const s = (stderr || '').trim();
+    if(!s) return '';
+    if(/no such table/i.test(s))            return s + '\n   → 테이블 이름을 확인하세요(철자·대소문자). 예: albums, tracks, customers, invoices.';
+    if(/no such column/i.test(s))           return s + '\n   → 열 이름을 확인하세요. 문자열 값은 작은따옴표 \'USA\' 로, 열 이름엔 따옴표를 쓰지 않아요.';
+    if(/syntax error/i.test(s))             return s + '\n   → 문법을 확인하세요: SELECT 열 FROM 테이블 [WHERE …] [ORDER BY …]; 끝에 세미콜론(;).';
+    if(/one statement/i.test(s))            return s + '\n   → 한 번에 한 문장만 실행돼요. 쿼리 하나만 남겨 주세요.';
+    return s;
   }
 
   // 브라우저용 파일 선택 → /api/convert/upload 업로드 변환
@@ -706,9 +771,9 @@ function makeWebApi(){
       })).json();
       trainerPack = r.items || [];
       trainerKoreanStep = r.korean_step || '';
-      // q_html·topic 등 '보여도 되는 것'만 노출. 정답/힌트는 trainerPack 에만 보관(단계적 공개).
+      // q_html·topic·kind 등 '보여도 되는 것'만 노출. 정답/힌트는 trainerPack 에만 보관(단계적 공개).
       return { count: r.count, scope: r.scope,
-               items: trainerPack.map(p => ({ idx:p.idx, topic:p.topic, stage:p.stage, q_html:p.q_html })) };
+               items: trainerPack.map(p => ({ idx:p.idx, topic:p.topic, stage:p.stage, q_html:p.q_html, kind:p.kind || 'python' })) };
     },
     trainer_hint: (idx, which) => {
       const p = (trainerPack || [])[idx] || {};
@@ -724,8 +789,9 @@ function makeWebApi(){
     trainer_run: async (idx, code, recon) => {
       const p = (trainerPack || [])[idx] || {};
       if(!(code || '').trim()) return { kind:'empty' };
+      const isSql = p.kind === 'sql';
       let r;
-      try { r = await _runInPyodide(code); }
+      try { r = isSql ? await _runSqlInPyodide(code, p.dataset || '', !!p.ordered) : await _runInPyodide(code); }
       catch(e){ return { kind:'launch', err:'실행 환경 오류: ' + e }; }
       if(r.kind === 'timeout') return { kind:'timeout', err:'' };
       if(r.kind === 'launch')  return { kind:'launch', err: r.stderr || '코드 실행 환경을 불러오지 못했어요.' };
@@ -734,7 +800,7 @@ function makeWebApi(){
       return { kind:'ok', match,
                expected: expected.trim(),
                got: (r.stdout || '').trim(),
-               err: match ? '' : _friendlyError(r.stderr) };
+               err: match ? '' : (isSql ? _sqlFriendly(r.stderr) : _friendlyError(r.stderr)) };
     },
     trainer_finish: async (rec) => {
       try{
@@ -756,6 +822,11 @@ function makeWebApi(){
       try{ return await (await fetch('/api/trainer/cheatsheet')).json(); }
       catch(e){ return { html:'<p class="placeholder">불러오기 실패</p>' }; }
     },
+    // 공지사항 — 정적 파일(서버 StaticFiles). 운영자가 notices.json 한 줄 추가 후 배포하면 반영.
+    get_notices: async () => {
+      try{ return await (await fetch('notices.json', { cache:'no-store' })).json(); }
+      catch(e){ return { items: [] }; }
+    },
   };
 }
 
@@ -763,6 +834,7 @@ async function initApi(api){
   API = api;
   try { const r = await API.get_theme(); applyTheme(r.theme, false); } catch(e){}
   refreshKeys();
+  loadNotices();        // 공지 불러와서 새 공지 배지 표시
   showWelcome(false);   // 첫 방문이면 사용 가이드 자동 표시
 }
 

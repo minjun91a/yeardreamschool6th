@@ -223,14 +223,19 @@ def trainer_start(payload: dict = Body(...)):
     problems = core.build_session(prog, count, restriction)
     items = []
     for i, p in enumerate(problems):
+        h = core.problem_hints(p)
         items.append({
             "idx": i, "topic": p["topic"], "stage": core.STAGE.get(p["topic"], 0),
             "q_html": core.md_to_html(p["q"]),
+            # 종류(python/sql) — SQL 은 브라우저 워커가 dataset 에 쿼리 실행, ordered=순서까지 채점
+            "kind": p.get("kind", "python"),
+            "dataset": p.get("dataset", ""),
+            "ordered": bool(p.get("ordered", False)),
             # 아래는 클라이언트가 '단계적으로만' 공개한다(처음엔 화면에 안 보임)
             "ans": p["ans"], "out": (p["out"] or "").strip(),
-            "intent": core.intent_hint(p["topic"]),
-            "skeleton": core.skeleton_hint(p["ans"]),
-            "korean_example": core.describe_code_korean(p["ans"]),
+            "intent": h["intent"],
+            "skeleton": h["skeleton"],
+            "korean_example": h["korean_example"],
         })
     return {"count": len(items), "items": items,
             "scope": topic if topic else "약점 우선(전체)",
@@ -259,8 +264,7 @@ def trainer_summary(payload: dict = Body(default={})):
 
 @app.get("/api/trainer/cheatsheet")
 def trainer_cheatsheet():
-    md = "\n".join(f"### {t}\n{tip}\n" for t, tip in core.TOOL_MAP.items())
-    return {"html": core.md_to_html(md)}
+    return {"html": core.md_to_html(core.cheatsheet_md())}
 
 
 # ── 고객센터(앱 사용법 챗봇) ──
@@ -279,15 +283,23 @@ async def support(payload: dict = Body(...)):
     if not any((m.get("content") or "").strip() for m in messages):
         return JSONResponse({"ok": False, "error": "질문을 입력해 주세요."}, status_code=400)
 
+    claude_msgs = [{"role": m.get("role"), "content": m.get("content")}
+                   for m in messages if (m.get("content") or "").strip()]
     try:
-        if gemini_key:   # 무료 Gemini 우선 — 누구나 무료로 고객센터 사용
+        if gemini_key:   # 무료 Gemini 우선 — 누구나 무료로 도움말 사용
             provider = "gemini"
-            ans = core._gemini_generate(support_kb.SUPPORT_SYSTEM, support_kb.support_transcript(messages),
-                                        gemini_key, max_tokens=2048)
-        else:            # Claude 폴백 — Gemini 키가 없을 때
+            try:
+                ans = core._gemini_generate(support_kb.SUPPORT_SYSTEM, support_kb.support_transcript(messages),
+                                            gemini_key, max_tokens=2048)
+            except core.GeminiError as ge:
+                # 무료 Gemini 한도(429)·혼잡(503)·일시오류(500) → Claude 키가 있으면 자동 전환
+                if getattr(ge, "code", None) in (429, 500, 503) and anthropic_key:
+                    provider = "claude"
+                    ans = core._anthropic_generate(support_kb.SUPPORT_SYSTEM, claude_msgs, anthropic_key, max_tokens=2048)
+                else:
+                    raise
+        else:            # Gemini 키가 없으면 처음부터 Claude
             provider = "claude"
-            claude_msgs = [{"role": m.get("role"), "content": m.get("content")}
-                           for m in messages if (m.get("content") or "").strip()]
             ans = core._anthropic_generate(support_kb.SUPPORT_SYSTEM, claude_msgs, anthropic_key, max_tokens=2048)
     except core.GeminiError as e:
         return {"ok": False, "error": str(e)}

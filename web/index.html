@@ -14,10 +14,11 @@
   <aside class="side">
     <div class="brand"><div class="logo">🎓</div><div><b>학습 올인원</b><span>오늘도 한 걸음 🌱</span></div></div>
     <nav class="nav">
-      <button class="on" data-view="convert"><span class="i">📄</span> 변환</button>
-      <button data-view="trainer"><span class="i">🧠</span> 코드연습</button>
-      <button data-view="helper"><span class="i">💬</span> 코드도우미</button>
-      <button data-view="support"><span class="i">🎧</span> 고객센터</button>
+      <button class="on" data-view="convert"><span class="i">📄</span> 노트 변환</button>
+      <button data-view="trainer"><span class="i">🧠</span> 코딩 연습</button>
+      <button data-view="helper"><span class="i">💬</span> AI 도우미</button>
+      <button data-view="notice"><span class="i">📢</span> 공지사항</button>
+      <button data-view="support"><span class="i">🎧</span> 도움말</button>
       <button data-view="settings"><span class="i">⚙️</span> 설정</button>
     </nav>
     <button class="themebtn" id="btnGuide">❓ 사용 가이드</button>
@@ -63,7 +64,7 @@
     <!-- ───── 코드연습 ───── -->
     <section id="view-trainer" class="view">
       <div class="top">
-        <div><h1>코드연습 🧠</h1><p id="trScope">예시 없이 스스로 코딩하는 힘 기르기</p></div>
+        <div><h1>코딩 연습 🧠</h1><p id="trScope">예시 없이 스스로 코딩하는 힘 기르기</p></div>
         <div style="display:flex; gap:10px; align-items:center;">
           <span id="trTimer" class="timer"></span>
           <button class="btn ghost sm" id="btnCheat">📖 치트시트</button>
@@ -107,7 +108,7 @@
     <!-- ───── 코드도우미 ───── -->
     <section id="view-helper" class="view">
       <div class="top">
-        <div><h1>코드 도우미 💬</h1><p>모르는 코드를 붙여넣으면 왜 그렇게 짰는지 설명해 줘요</p></div>
+        <div><h1>AI 도우미 💬</h1><p>모르는 코드를 붙여넣으면 왜 그렇게 짰는지 설명해 줘요</p></div>
         <span id="helpPill" class="pill none"><span class="dot"></span> Gemini 미설정</span>
       </div>
       <div class="sec">①  코드 — 모르는 코드를 붙여넣기</div>
@@ -124,20 +125,31 @@
       <div class="card md" id="hpAnswer"><div class="placeholder">코드와 질문을 넣고 <b>물어보기 ▶</b>를 눌러보세요.</div></div>
     </section>
 
-    <!-- ───── 고객센터 ───── -->
+    <!-- ───── 공지사항 ───── -->
+    <section id="view-notice" class="view">
+      <div class="top">
+        <div><h1>공지사항 📢</h1><p>업데이트·새 기능 소식을 여기서 확인하세요.</p></div>
+      </div>
+      <div class="card" id="noticeList" style="overflow:auto;">
+        <div class="placeholder">공지를 불러오는 중…</div>
+      </div>
+    </section>
+
+    <!-- ───── 도움말 ───── -->
     <section id="view-support" class="view">
       <div class="top">
-        <div><h1>고객센터 🎧</h1><p>사용 중 궁금한 점을 물어보세요. 앱 사용법을 도와드려요.</p></div>
+        <div><h1>도움말 🎧</h1><p>사용 중 궁금한 점을 물어보세요. 앱 사용법을 도와드려요.</p></div>
         <span id="supPill" class="pill none"><span class="dot"></span> 키 미설정</span>
       </div>
       <div class="chips" id="supChips">
-        <button class="chip-q">변환은 어떻게 쓰나요?</button>
+        <button class="chip-q">노트 변환은 어떻게 쓰나요?</button>
         <button class="chip-q">API 키는 어디서 등록하나요?</button>
-        <button class="chip-q">코드연습은 어떻게 하나요?</button>
+        <button class="chip-q">코딩 연습은 어떻게 하나요?</button>
+        <button class="chip-q">답변이 안 오거나 한도 초과래요</button>
         <button class="chip-q">버튼이 안 눌려요</button>
       </div>
       <div class="chat" id="supChat">
-        <div class="msg bot md"><p>안녕하세요! 학습 올인원 고객센터예요 🎧<br>변환·코드연습·코드도우미·키 등록 등 <b>사용법</b>을 도와드려요. 무엇이 궁금하세요?</p></div>
+        <div class="msg bot md"><p>안녕하세요! 학습 올인원 도움말이에요 🎧<br>노트 변환·코딩 연습·AI 도우미·키 등록 등 <b>사용법</b>을 도와드려요. 무엇이 궁금하세요?</p></div>
       </div>
       <div class="chatbar">
         <textarea class="qbox" id="supInput" placeholder="궁금한 점을 입력하고 Enter (줄바꿈은 Shift+Enter)"></textarea>
@@ -160,7 +172,7 @@
         </div>
         <div class="set-card">
           <h3>💬 Gemini 키 (무료 · 누구나)</h3>
-          <p>누구나 <b>무료</b>로 쓸 수 있어요. <b>코드도우미는 항상 Gemini</b>, 요점정리는 Claude 키가 없을 때 Gemini로 동작해요. <a href="#" id="lnkGem">AI Studio에서 무료 키 만들기 ↗</a></p>
+          <p>누구나 <b>무료</b>로 쓸 수 있어요. <b>AI 도우미는 항상 Gemini</b>, 요점정리는 Claude 키가 없을 때 Gemini로 동작해요. <a href="#" id="lnkGem">AI Studio에서 무료 키 만들기 ↗</a></p>
           <div class="keyrow"><input id="inGem" type="password" placeholder="AIza…"><button class="btn sm" id="saveGem">저장</button></div>
           <div class="kstat off" id="stGem">미설정</div>
         </div>
