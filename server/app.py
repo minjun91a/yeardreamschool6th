@@ -165,21 +165,22 @@ async def helper(payload: dict = Body(...)):
     code = payload.get("code") or ""
     question = payload.get("question") or ""
     gemini_key = (payload.get("gemini_key") or "").strip()
+    anthropic_key = (payload.get("anthropic_key") or "").strip()
 
-    if not gemini_key:
+    if not (gemini_key or anthropic_key):
         return {"ok": False, "nokey": True}
     if not code.strip() and not question.strip():
         return JSONResponse({"ok": False, "error": "코드나 질문 중 하나는 입력해 주세요."}, status_code=400)
 
     try:
-        ans = core.call_gemini(question, code, gemini_key)
+        ans, provider = core.explain_code(question, code, gemini_key, anthropic_key)
     except core.GeminiError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:  # noqa: BLE001
         core.log.exception("helper 오류")
         return JSONResponse({"ok": False, "error": "서버 처리 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요."}, status_code=500)
 
-    return {"ok": True, "html": core.md_to_html(ans)}
+    return {"ok": True, "provider": provider, "html": core.md_to_html(ans)}
 
 
 # ── 코드연습(trainer) ──

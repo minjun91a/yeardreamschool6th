@@ -395,15 +395,16 @@ async function hpAsk(){
   const code = $('#hpCode').value.trim(), q = $('#hpQ').value.trim();
   if(!code && !q){ toast('코드나 질문 중 하나는 입력해 주세요','err'); return; }
   hpBusy=true; $('#hpAsk').disabled=true;
-  $('#hpStatus').textContent='Gemini에게 물어보는 중…'; $('#hpStatus').className='status work';
+  $('#hpStatus').textContent='AI에게 물어보는 중…'; $('#hpStatus').className='status work';
   $('#hpAnswer').innerHTML='<div class="loading"><div class="spin"></div> 답변 생성 중…</div>';
   let r;
   try { r = await API.helper_ask(code, q); }
   finally { hpBusy=false; $('#hpAsk').disabled=false; }
-  if(r.nokey){ toast('AI 도우미엔 무료 Gemini 키가 필요해요. 설정에서 등록하세요.','err'); $('#hpStatus').textContent=''; $('#hpAnswer').innerHTML='<div class="placeholder">설정에서 Gemini 키를 먼저 등록해 주세요.</div>'; navTo('settings'); return; }
+  if(r.nokey){ toast('AI 도우미엔 무료 Gemini 키(또는 Claude 키)가 필요해요. 설정에서 등록하세요.','err'); $('#hpStatus').textContent=''; $('#hpAnswer').innerHTML='<div class="placeholder">설정에서 무료 Gemini 키(또는 Claude 키)를 먼저 등록해 주세요.</div>'; navTo('settings'); return; }
   if(!r.ok){ $('#hpAnswer').innerHTML='<h3>오류가 발생했어요</h3><p>'+esc(r.error||'')+'</p>'; $('#hpStatus').textContent='오류'; $('#hpStatus').className='status err'; return; }
   $('#hpAnswer').innerHTML = r.html;
-  $('#hpStatus').textContent = '✓ 완료' + (r.saved? ' · 저장됨 '+r.saved : ''); $('#hpStatus').className='status ok';
+  const via = r.provider==='claude' ? ' · Claude로 답함(Gemini 한도)' : '';
+  $('#hpStatus').textContent = '✓ 완료' + via + (r.saved? ' · 저장됨 '+r.saved : ''); $('#hpStatus').className='status ok';
 }
 function hpClear(){ $('#hpCode').value=''; $('#hpQ').value=''; $('#hpAnswer').innerHTML='<div class="placeholder">코드와 질문을 넣고 <b>물어보기 ▶</b>를 눌러보세요.</div>'; $('#hpStatus').textContent=''; }
 
@@ -742,11 +743,11 @@ function makeWebApi(){
     clear_notes: () => ({ ok:true }),
     helper_ask: async (code, question) => {
       const k = readKeys();
-      if(!k.gemini) return { ok:false, nokey:true };
+      if(!k.gemini && !k.claude) return { ok:false, nokey:true };
       try{
         const res = await fetch('/api/helper', {
           method:'POST', headers:{ 'Content-Type':'application/json' },
-          body: JSON.stringify({ code, question, gemini_key:k.gemini }),
+          body: JSON.stringify({ code, question, gemini_key:k.gemini, anthropic_key:k.claude }),
         });
         return await res.json();
       }catch(e){ return { ok:false, error:'서버 연결 실패: ' + e }; }

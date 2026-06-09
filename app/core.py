@@ -1177,6 +1177,28 @@ def call_gemini(question: str, code: str, api_key: str,
                             api_key, model, timeout, max_tokens=4096)
 
 
+def explain_code(question: str, code: str, gemini_key: str = "", anthropic_key: str = ""):
+    """[AI 도우미] 코드 설명. 무료 Gemini 우선, 한도(429/500/503) 시 Claude 폴백.
+
+    반환: (text, provider). 둘 다 키가 없으면 GeminiError.
+    같은 시스템 프롬프트(SYSTEM_INSTRUCTION)·user 텍스트를 두 공급자에 그대로 재사용한다.
+    """
+    if gemini_key:
+        try:
+            return call_gemini(question, code, gemini_key), "gemini"
+        except GeminiError as e:
+            # Gemini 무료 한도/혼잡 + Claude 키 보유 → Claude 폴백. 그 외 오류는 그대로 올림.
+            if not (getattr(e, "code", None) in (429, 500, 503) and anthropic_key):
+                raise
+    if anthropic_key:
+        text = _anthropic_generate(
+            SYSTEM_INSTRUCTION,
+            [{"role": "user", "content": build_user_text(question, code)}],
+            anthropic_key, max_tokens=4096)
+        return text, "claude"
+    raise GeminiError("AI 도우미를 쓰려면 무료 Gemini 키(또는 Claude 키)가 필요해요. 설정에서 등록하세요.")
+
+
 def _explain_anthropic_error(code: int, detail: str) -> str:
     """Claude(Anthropic) HTTP 오류를 한국어로 설명. detail 에서 error.message 추출 시도."""
     msg = ""
