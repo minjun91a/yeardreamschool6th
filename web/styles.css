@@ -138,17 +138,18 @@ a{ color:var(--accent); }
 .t-grid{ display:flex; gap:14px; flex:1; min-height:0; }
 .t-col{ display:flex; flex-direction:column; gap:12px; min-height:0; }
 .t-col.left{ flex:1.1; } .t-col.right{ flex:1; }
+/* 코드연습: 한 칼럼에서 문제→코드→실행→결과를 위에서 아래로 (단일 패널) */
+.t-single{ display:flex; flex-direction:column; gap:10px; flex:1; min-height:0; }
 .sec{ font-size:13px; font-weight:800; color:var(--accent); margin:2px 0; display:flex; align-items:center; gap:7px; }
 .codebox, .qbox{ width:100%; border:none; border-radius:var(--r-md); background:var(--surface); box-shadow:var(--sh-sm);
   padding:14px 16px; font-family:Consolas,monospace; font-size:13.5px; color:var(--ink); resize:none; line-height:1.5; }
 .qbox{ font-family:'Malgun Gothic','Segoe UI',sans-serif; }
 .codebox:focus, .qbox:focus{ outline:2px solid var(--focus); }
 .codebox:disabled{ background:var(--soft); color:var(--muted); }
-.k-area{ height:96px; } .code-area{ flex:1; min-height:120px; }
+.code-area{ flex:1; min-height:120px; }
 .actions{ display:flex; gap:9px; align-items:center; flex-wrap:wrap; }
 .timer{ font-family:Consolas,monospace; font-size:13px; color:var(--muted); }
 .fb{ flex:1; min-height:120px; }
-.gate{ align-self:flex-end; }
 .hidden{ display:none !important; }
 
 .overlay{ position:absolute; inset:0; background:rgba(20,16,34,.42); backdrop-filter:blur(3px);

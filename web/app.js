@@ -6,7 +6,7 @@ let API = null;
 
 const GEM_URL = 'https://aistudio.google.com/apikey';
 const CLAUDE_URL = 'https://console.anthropic.com/settings/keys';
-const ANSWER_DELAY = 90, KOREAN_MIN = 8;
+const ANSWER_DELAY = 90;
 const THEMES = ['pastel','light','dark'];
 const THEME_LABEL = { pastel:'파스텔', light:'라이트', dark:'다크' };
 let curTheme = 'pastel';
@@ -205,7 +205,7 @@ async function convSave(){
 
 /* ── 코드연습 상태머신 ── */
 const T = { items:[], count:0, idx:0, scope:'', phase:'idle',
-  elapsed:0, attempts:0, hint:0, kHint:0, sawAns:false, sawKEx:false, solvedOnce:false,
+  elapsed:0, attempts:0, hint:0, sawAns:false, solvedOnce:false,
   fbRun:'', fbHints:[], fbAnswer:'', busy:false, timer:null };
 
 function renderFB(){
@@ -219,32 +219,19 @@ function renderFB(){
 }
 function applyPhase(ph){
   T.phase = ph;
-  const code=$('#trCode'), run=$('#trRun'), hint=$('#trHint'), ans=$('#trAnswer'), gate=$('#trGate'), next=$('#trNext'), banner=$('#trBanner');
-  if(ph==='korean'){
-    banner.textContent='1단계 · 한국어로 풀이 설계 (코드칸 잠김). 막히면 [💡 단계 힌트] → [한국어 예시]';
-    gate.classList.remove('hidden'); gate.disabled=false;
-    code.disabled=true; run.disabled=true;
-    hint.textContent='💡 단계 힌트'; hint.disabled=false;
-    ans.textContent='한국어 예시'; ans.disabled=false;
-    next.disabled=true;
-  } else if(ph==='coding'){
-    banner.textContent='2단계 · 코드 작성 → [▶ 실행]으로 채점. 막히면 [💡 힌트]부터!';
-    gate.classList.add('hidden');
-    code.disabled=false; code.focus();
+  const code=$('#trCode'), run=$('#trRun'), hint=$('#trHint'), next=$('#trNext'), banner=$('#trBanner');
+  if(ph==='coding'){
+    banner.textContent='코드를 작성하고 [▶ 실행]으로 채점해요. 막히면 [💡 힌트] → [정답].';
+    code.disabled=false;
     run.textContent='▶ 실행'; run.disabled=false;
     hint.textContent='💡 힌트'; hint.disabled=false;
-    next.disabled=true;
+    next.disabled=false;
     refreshAnswerBtn();
   } else if(ph==='solved'){
-    banner.textContent='✅ 정답! 3단계 백지 복원으로 완전히 내 것으로 만들어요.';
-    run.textContent='🧠 백지 복원'; run.disabled=false;
-    hint.disabled=true; ans.disabled=true; next.disabled=false;
-  } else if(ph==='reconstruct'){
-    banner.textContent='3단계 · 백지 복원 — 안 보고 처음부터 다시! (힌트·정답 잠금)';
-    gate.classList.add('hidden');
-    run.textContent='▶ 복원 채점'; run.disabled=false;
-    code.disabled=false; code.focus();
-    hint.disabled=true; ans.disabled=true; next.disabled=false;
+    banner.textContent='✅ 정답! [다음 →]으로 넘어가거나, 코드를 고쳐 다시 실행해도 돼요.';
+    run.textContent='▶ 실행'; run.disabled=false;
+    hint.disabled=true; $('#trAnswer').disabled=true;
+    next.disabled=false;
   }
 }
 function refreshAnswerBtn(){
@@ -258,7 +245,7 @@ function refreshAnswerBtn(){
 function startTick(){
   if(T.timer) return;
   T.timer = setInterval(()=>{
-    if(T.phase==='coding' || T.phase==='reconstruct'){
+    if(T.phase==='coding'){
       T.elapsed++;
       $('#trTimer').textContent='⏱ '+Math.floor(T.elapsed/60)+':'+String(T.elapsed%60).padStart(2,'0');
       refreshAnswerBtn();
@@ -267,7 +254,6 @@ function startTick(){
 }
 // 입력칸 안내문: SQL 단원은 '--'(SQL 주석), 파이썬은 '#'(파이썬 주석)으로 맞춘다.
 function _codePH(){ return T.kind === 'sql' ? '-- 여기에 SQL을 작성하고 [▶ 실행]을 누르세요' : '# 여기에 코드를 작성하고 [▶ 실행]을 누르세요'; }
-function _reconPH(){ return T.kind === 'sql' ? '-- 안 보고 처음부터 다시 쳐보세요' : '# 안 보고 처음부터 다시 쳐보세요'; }
 async function trOpenChooser(){
   if(!ready()) return;
   const r = await API.trainer_topics();
@@ -289,84 +275,57 @@ async function trBegin(sel){
 }
 function trLoad(i){
   if(i>=T.count){ return trSummary(); }
-  T.idx=i; T.elapsed=0; T.attempts=0; T.hint=0; T.kHint=0; T.sawAns=false; T.sawKEx=false; T.solvedOnce=false;
+  T.idx=i; T.elapsed=0; T.attempts=0; T.hint=0; T.sawAns=false; T.solvedOnce=false;
   T.fbRun=''; T.fbHints=[]; T.fbAnswer='';
   const it = T.items[i];
   T.kind = it.kind || 'python';
   $('#trProblem').innerHTML = it.q_html;
-  $('#trKorean').value=''; $('#trCode').value=_codePH();
-  $('#trCode').disabled=true; $('#trTimer').textContent='';
+  $('#trCode').value=_codePH(); $('#trCode').disabled=false; $('#trTimer').textContent='';
   $('#trProgress').textContent = '〔'+T.scope+'〕 '+(i+1)+'/'+T.count+' · '+it.topic;
   ['trRun','trHint','trAnswer'].forEach(id=>$('#'+id).disabled=false);
   renderFB();
-  applyPhase('korean');
-  $('#trKorean').focus();
-}
-function trGate(){
-  const t = $('#trKorean').value.replace(/\s/g,'');
-  if(t.length < KOREAN_MIN){ toast('무엇을 어떤 순서로 할지 한국어로 더 적어 주세요 (예: total을 0으로, 1~n 더하기, 출력)','err'); $('#trKorean').focus(); return; }
-  $('#trCode').value=_codePH();
   applyPhase('coding');
+  $('#trCode').focus();
 }
 async function trPrimary(){
   if(T.busy) return;
-  if(T.phase==='coding') return trRun(false);
-  if(T.phase==='solved') return enterReconstruct();
-  if(T.phase==='reconstruct') return trRun(true);
+  if(T.phase==='coding' || T.phase==='solved') return trRun();
 }
-async function trRun(recon){
+async function trRun(){
   const code = $('#trCode').value;
   T.busy=true; $('#trRun').disabled=true; T.attempts++;
   let r;
-  try { r = await API.trainer_run(T.idx, code, recon); }
+  try { r = await API.trainer_run(T.idx, code, false); }
   finally { T.busy=false; $('#trRun').disabled=false; }
-  if(r.kind==='empty'){ T.fbRun='<p>❌ 코드가 비어 있어요. 한국어 단계를 한 줄씩 코드로 옮겨 보세요.</p>'; return renderFB(); }
+  if(r.kind==='empty'){ T.fbRun='<p>❌ 코드가 비어 있어요. 코드를 작성한 뒤 [▶ 실행]을 눌러요.</p>'; return renderFB(); }
   if(r.kind==='timeout'){ T.fbRun='<h3>❌ 시간 초과</h3><p>무한 루프일 수 있어요. while 조건이 언젠가 거짓이 되는지 확인하세요.</p>'; return renderFB(); }
   if(r.kind==='launch'){ T.fbRun='<h3>❌ 실행 실패</h3>'+codeBlock(r.err); return renderFB(); }
   const shown = r.got || '(아무것도 출력되지 않음)';
   if(r.match){
-    if(recon){ T.fbRun='<h3>✅ 백지 복원 성공!</h3><p>안 보고 다시 만들었어요 — 완전 습득 🎉</p>'; renderFB(); return trFinish(true,true); }
     T.solvedOnce=true; T.fbRun='<h3>✅ 정답!</h3>'+codeBlock(shown); applyPhase('solved'); renderFB();
   } else {
     let h='<h3>❌ 아직 안 맞아요</h3><p><strong>기대한 출력</strong></p>'+codeBlock(r.expected)+'<p><strong>내 코드 출력</strong></p>'+codeBlock(shown);
     if(r.err) h += '<blockquote>'+esc(r.err)+'</blockquote>';
-    h += recon ? '<p class="placeholder">괜찮아요. 기억을 더듬어 다시! (복원 단계는 힌트 잠금)</p>'
-               : '<p class="placeholder">막히면 [💡 힌트]를 눌러 의도→도구부터 확인하세요.</p>';
+    h += '<p class="placeholder">막히면 [💡 힌트]를 눌러 의도→도구부터 확인하세요.</p>';
     T.fbRun=h; renderFB();
   }
 }
 async function trHint(){
-  if(T.phase==='korean'){
-    if(T.kHint===0){ T.kHint=1; const r=await API.trainer_hint(T.idx,'k1'); T.fbHints.push('<h3>💡 한국어 힌트 ① 단계 나누는 법</h3><p>'+esc(r.text)+'</p>'); }
-    else if(T.kHint===1){ T.kHint=2; const r=await API.trainer_hint(T.idx,'k2'); T.fbHints.push('<h3>💡 한국어 힌트 ② 의도 → 도구</h3><p>'+esc(r.text)+'</p>'); $('#trHint').disabled=true; }
-    return renderFB();
-  }
   if(T.phase!=='coding') return;
   if(T.hint===0){ T.hint=1; const r=await API.trainer_hint(T.idx,'c1'); T.fbHints.push('<h3>💡 힌트 ① 의도 → 도구</h3><p>'+esc(r.text)+'</p>'); }
   else if(T.hint===1){ T.hint=2; const r=await API.trainer_hint(T.idx,'c2'); T.fbHints.push('<h3>💡 힌트 ② 뼈대 — 여기서 출발해 채워 보세요</h3>'+codeBlock(r.code)); $('#trHint').disabled=true; }
   renderFB();
 }
 async function trAnswer(){
-  if(T.phase==='korean'){
-    T.sawKEx=true;
-    const r = await API.trainer_korean_example(T.idx);
-    T.fbAnswer='<h3>🧭 예시 설계 (한 가지 방법일 뿐 · 코드 아님)</h3>'+codeBlock(r.text)+'<p class="placeholder">위를 참고해 네 말로 ① 칸에 단계를 적고 [코드 시작 ▶].</p>';
-    return renderFB();
-  }
   if(T.phase!=='coding') return;
   T.sawAns=true;
   const r = await API.trainer_answer(T.idx);
-  T.fbAnswer='<h3>🔑 정답 예시</h3>'+codeBlock(r.ans)+'<p><strong>출력</strong></p>'+codeBlock(r.out)+'<p class="placeholder">이해했으면 [🧠 백지 복원]으로 안 보고 다시 쳐보세요.</p>';
-  applyPhase('solved'); renderFB();
-}
-function enterReconstruct(){
-  T.elapsed=0; T.fbRun=''; T.fbHints=[]; T.fbAnswer=''; renderFB();
-  $('#trCode').value=_reconPH();
-  applyPhase('reconstruct');
+  T.fbAnswer='<h3>🔑 정답 예시</h3>'+codeBlock(r.ans)+'<p><strong>출력</strong></p>'+codeBlock(r.out)+'<p class="placeholder">정답을 참고해 직접 고친 뒤 [▶ 실행]으로 확인해 보세요.</p>';
+  $('#trNext').disabled=false; renderFB();
 }
 function trNext(){
-  if(T.phase==='solved' || T.phase==='reconstruct') trFinish(T.solvedOnce, false);
-  else trFinish(false, false);  // 코딩 중 건너뛰기
+  // 정답 열람 없이 스스로 맞히면 '습득'으로 기록
+  trFinish(T.solvedOnce, T.solvedOnce && !T.sawAns);
 }
 async function trFinish(solved, mastered){
   const it = T.items[T.idx];
@@ -377,9 +336,8 @@ async function trFinish(solved, mastered){
 async function trSummary(){
   T.phase='done'; $('#trTimer').textContent=''; $('#trBanner').textContent='🎉 이번 세션 완료!';
   $('#trProblem').innerHTML='<h1>오늘 훈련 끝!</h1><p class="placeholder">수고했어요. 아래 약점 주제를 확인하세요.</p>';
-  $('#trKorean').value=''; $('#trCode').value=''; $('#trCode').disabled=true;
-  ['trRun','trHint','trAnswer'].forEach(id=>$('#'+id).disabled=true);
-  $('#trGate').classList.add('hidden');
+  $('#trCode').value=''; $('#trCode').disabled=true;
+  ['trRun','trHint','trAnswer','trNext'].forEach(id=>$('#'+id).disabled=true);
   $('#trProgress').textContent='세션 요약';
   const r = await API.trainer_summary();
   T.fbRun='<h3>세션 완료</h3><p>다음에 집중하면 좋은 약점 주제: <strong>'+esc(r.weak)+'</strong></p>'+
@@ -516,7 +474,6 @@ function wire(){
   $('#btnSave').addEventListener('click', convSave);
   $('#btnGeminiKey').addEventListener('click', ()=>{ navTo('settings'); $('#inGem').focus(); });
   // 코드연습
-  $('#trGate').addEventListener('click', trGate);
   $('#trRun').addEventListener('click', trPrimary);
   $('#trHint').addEventListener('click', trHint);
   $('#trAnswer').addEventListener('click', trAnswer);

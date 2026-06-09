@@ -72,27 +72,20 @@
         </div>
       </div>
       <div class="banner" id="trBanner">주제를 고르면 시작해요.</div>
-      <div class="t-grid">
-        <div class="t-col left">
-          <div class="sec">문제 <span id="trProgress" class="timer"></span></div>
-          <div class="card md" id="trProblem" style="flex:0 0 auto; max-height:46%;"><div class="placeholder">주제 선택을 기다리는 중…</div></div>
-          <div class="sec">①  한국어로 ‘무엇을, 어떤 순서로’ (필수)</div>
-          <textarea class="qbox k-area" id="trKorean" placeholder="예) 1) total을 0으로 둔다  2) 1부터 n까지 더한다  3) 출력한다"></textarea>
-          <button class="btn gate" id="trGate">단계 다 썼어요 — 코드 시작 ▶</button>
+      <div class="t-single">
+        <div class="sec">문제 <span id="trProgress" class="timer"></span></div>
+        <div class="card md" id="trProblem" style="flex:0 0 auto; max-height:38%;"><div class="placeholder">주제 선택을 기다리는 중…</div></div>
+        <div class="sec">코드를 작성하고 [▶ 실행]으로 채점</div>
+        <textarea class="codebox code-area" id="trCode" spellcheck="false"># 여기에 코드를 작성하고 [▶ 실행]을 누르세요</textarea>
+        <div class="actions">
+          <button class="btn" id="trRun">▶ 실행</button>
+          <button class="btn ghost sm" id="trHint">💡 힌트</button>
+          <button class="btn ghost sm" id="trAnswer">정답 🔒</button>
+          <div class="spacer"></div>
+          <button class="btn ghost sm" id="trNext">다음 →</button>
         </div>
-        <div class="t-col right">
-          <div class="sec">②  코드 작성하고 실행</div>
-          <textarea class="codebox code-area" id="trCode" spellcheck="false" disabled># 1단계(한국어 설계)를 먼저 끝내면 열려요</textarea>
-          <div class="actions">
-            <button class="btn" id="trRun">▶ 실행</button>
-            <button class="btn ghost sm" id="trHint">💡 힌트</button>
-            <button class="btn ghost sm" id="trAnswer">정답 🔒</button>
-            <div class="spacer"></div>
-            <button class="btn ghost sm" id="trNext">다음 →</button>
-          </div>
-          <div class="sec">결과 · 힌트 · 정답</div>
-          <div class="card md fb" id="trFeedback"><div class="placeholder">여기에 실행 결과와 힌트가 표시돼요.</div></div>
-        </div>
+        <div class="sec">결과 · 힌트 · 정답</div>
+        <div class="card md fb" id="trFeedback"><div class="placeholder">여기에 실행 결과가 표시돼요. 막히면 [💡 힌트] → [정답]을 눌러요.</div></div>
       </div>
       <!-- 주제 선택 오버레이 -->
       <div class="overlay" id="trChooser">
