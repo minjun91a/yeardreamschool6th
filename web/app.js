@@ -568,20 +568,22 @@ function makeWebApi(){
   let _pyWarm = null;     // 워밍업(로딩) Promise. resolve(true)=준비완료 / resolve(false)=실패
   let _pyReqSeq = 0;      // 실행 요청 일련번호
   let _pyPending = null;  // { id, resolve, timer } — 진행 중 1건(코드연습은 한 번에 한 문제만 실행)
+  let _pyLoadErr = '';    // Pyodide 로딩 실패 시 '진짜 원인'을 보관(사용자에게 그대로 보여줌)
 
   // 워커 생성 + Pyodide 로딩 시작. 같은 Promise 를 캐시해 중복 로딩을 막는다.
   function _ensurePyReady(){
     if(_pyWarm) return _pyWarm;
+    _pyLoadErr = '';
     _pyWarm = new Promise((resolve) => {
       let settled = false;
       let w;
       try { w = new Worker('pyodide-worker.js'); }
-      catch(e){ resolve(false); return; }
+      catch(e){ _pyLoadErr = String((e && e.message) || e); resolve(false); return; }
       _pyWorker = w;
       w.onmessage = (e) => {
         const m = e.data || {};
         if(m.type === 'ready'){ if(!settled){ settled = true; resolve(true); } return; }
-        if(m.type === 'error'){ if(!settled){ settled = true; resolve(false); } return; }
+        if(m.type === 'error'){ if(!settled){ settled = true; _pyLoadErr = m.error || ''; resolve(false); } return; }
         // 실행 응답
         if(_pyPending && m.id === _pyPending.id){
           clearTimeout(_pyPending.timer);
@@ -589,8 +591,8 @@ function makeWebApi(){
           d.resolve(m);
         }
       };
-      w.onerror = () => {
-        if(!settled){ settled = true; resolve(false); }
+      w.onerror = (ev) => {
+        if(!settled){ settled = true; _pyLoadErr = (ev && ev.message) || '워커 스크립트 로드 실패'; resolve(false); }
         if(_pyPending){ const d = _pyPending; _pyPending = null; clearTimeout(d.timer);
           d.resolve({ kind:'launch', stdout:'', stderr:'실행 워커 오류' }); }
       };
@@ -614,8 +616,12 @@ function makeWebApi(){
     let ok = false;
     try { ok = await _ensurePyReady(); } catch(e){ ok = false; }
     if(!ok || !_pyWorker){
+      const why = _pyLoadErr ? ('\n[원인] ' + _pyLoadErr) : '';
       _resetPyWorker();
-      return { kind:'launch', stdout:'', stderr:'코드 실행 환경(Pyodide)을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.' };
+      return { kind:'launch', stdout:'', stderr:
+        '코드 실행 환경(Pyodide)을 불러오지 못했어요.' + why +
+        '\n학교·회사 네트워크가 외부 CDN(cdn.jsdelivr.net)을 막으면 이 오류가 납니다 — ' +
+        '모바일 핫스팟 등 다른 네트워크로 시도하거나, 잠시 후 [▶ 실행]을 다시 눌러 보세요.' };
     }
     return new Promise((resolve) => {
       const id = ++_pyReqSeq;

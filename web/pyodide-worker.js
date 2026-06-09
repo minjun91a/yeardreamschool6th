@@ -33,7 +33,7 @@ var _loadedDatasets = {};     // dataset 이름 → Pyodide FS 경로(중복 적
 //  _fmt_resultset: SQL result set → 정규 텍스트(⚠️ core._fmt_resultset 과 동일해야 함).
 //  __learn_sql__ : 데이터셋 파일에 SQL 을 읽기전용 실행하고 (정규결과, 에러) 반환.
 var RUNNER = [
-  'import sys, io, traceback, sqlite3',
+  'import sys, io, traceback',
   '',
   'def __learn_run__(src):',
   '    buf, ebuf = io.StringIO(), io.StringIO()',
@@ -63,6 +63,7 @@ var RUNNER = [
   '',
   'def __learn_sql__(path, sql, ordered):',
   '    try:',
+  '        import sqlite3',
   '        con = sqlite3.connect(path)',
   '        try:',
   '            con.execute("PRAGMA query_only = ON")',
@@ -83,6 +84,9 @@ function ensurePyodide() {
       importScripts(PYODIDE_BASE + 'pyodide.js');
       // indexURL 을 명시해 WASM/패키지 데이터를 같은 CDN 에서 받도록 한다.
       var py = await loadPyodide({ indexURL: PYODIDE_BASE });
+      // ⚠️ Pyodide 에서 sqlite3 는 기본 미포함(unvendored) → SQL 트랙용으로 패키지를 로드한다.
+      //    실패해도 파이썬 코드 채점은 정상 동작하도록 try 로 감싼다(RUNNER 는 sqlite3 를 top-import 하지 않음).
+      try { await py.loadPackage('sqlite3'); } catch (e) { /* SQL 단원 실행 시 __learn_sql__ 에서 안내 */ }
       py.runPython(RUNNER);  // __learn_run__ / _fmt_resultset / __learn_sql__ 정의(1회)
       return py;
     })();
